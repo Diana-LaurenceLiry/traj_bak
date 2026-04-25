@@ -9,13 +9,11 @@ from gazebo_msgs.srv import DeleteModel, SetModelState, SpawnModel
 from geometry_msgs.msg import Pose
 
 
-def make_tree_sdf(trunk_radius, trunk_height, canopy_radius, canopy_height, mass):
-    canopy_z = trunk_height + canopy_height * 0.45
-    collision_height = trunk_height + canopy_height * 0.45
-    collision_radius = max(trunk_radius * 1.15, canopy_radius * 0.42)
+def make_checker_cylinder_sdf(radius, height, mass):
+    zc = height * 0.5
     return f"""<?xml version='1.0'?>
 <sdf version='1.6'>
-  <model name='dynamic_tree'>
+  <model name='dynamic_checker_cylinder'>
     <static>false</static>
     <link name='link'>
       <inertial>
@@ -26,37 +24,27 @@ def make_tree_sdf(trunk_radius, trunk_height, canopy_radius, canopy_height, mass
         </inertia>
       </inertial>
       <collision name='collision'>
-        <pose>0 0 {collision_height / 2.0} 0 0 0</pose>
+        <pose>0 0 {zc} 0 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>{collision_radius}</radius>
-            <length>{collision_height}</length>
+            <radius>{radius}</radius>
+            <length>{height}</length>
           </cylinder>
         </geometry>
       </collision>
-      <visual name='trunk'>
-        <pose>0 0 {trunk_height / 2.0} 0 0 0</pose>
+      <visual name='checker_body'>
+        <pose>0 0 {zc} 0 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>{trunk_radius}</radius>
-            <length>{trunk_height}</length>
+            <radius>{radius}</radius>
+            <length>{height}</length>
           </cylinder>
         </geometry>
         <material>
-          <ambient>0.32 0.19 0.08 1</ambient>
-          <diffuse>0.36 0.22 0.10 1</diffuse>
-        </material>
-      </visual>
-      <visual name='canopy'>
-        <pose>0 0 {canopy_z} 0 0 0</pose>
-        <geometry>
-          <sphere>
-            <radius>{canopy_radius}</radius>
-          </sphere>
-        </geometry>
-        <material>
-          <ambient>0.08 0.33 0.10 1</ambient>
-          <diffuse>0.10 0.45 0.12 1</diffuse>
+          <script>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+            <name>Gazebo/Checkerboard</name>
+          </script>
         </material>
       </visual>
     </link>
@@ -72,26 +60,23 @@ class DynamicObstaclesManager:
         self.prefix = rospy.get_param("~prefix", "dyn_obs")
         self.rate_hz = float(rospy.get_param("~rate", 20.0))
         self.z_base = float(rospy.get_param("~z_base", 0.0))
-        self.tree_trunk_radius = float(rospy.get_param("~tree_trunk_radius", 0.14))
-        self.tree_trunk_height = float(rospy.get_param("~tree_trunk_height", 0.80))
-        self.tree_canopy_radius = float(rospy.get_param("~tree_canopy_radius", 0.45))
-        self.tree_canopy_height = float(rospy.get_param("~tree_canopy_height", 0.70))
-        self.tree_mass = float(rospy.get_param("~tree_mass", 8.0))
+        self.cyl_radius = float(rospy.get_param("~cyl_radius", 0.30))
+        self.cyl_height = float(rospy.get_param("~cyl_height", 1.20))
+        self.cyl_mass = float(rospy.get_param("~cyl_mass", 4.0))
         self.safe_clearance = float(rospy.get_param("~safe_clearance", 4.0))
         self.search_radius_max = float(rospy.get_param("~search_radius_max", 15.0))
         self.search_radius_step = float(rospy.get_param("~search_radius_step", 1.5))
         self.angular_samples = int(rospy.get_param("~angular_samples", 24))
         self.min_spawn_distance_to_origin = float(rospy.get_param("~min_spawn_distance_to_origin", 5.0))
+        self.auto_relocate = bool(rospy.get_param("~auto_relocate", False))
 
-        # Corridor-near dynamic obstacles: keep them on/near the default
-        # 5-waypoint route while leaving enough surrounding space.
+        # Two dynamic obstacles (conservative mode): slower and smaller oscillation
+        # to keep experiment challenging but avoid excessive route collapse.
         self.obstacles = [
-            # Segment wp1->wp2 (crossing motion in y).
-            {"name": f"{self.prefix}_0", "cx": 7.3, "cy": -1.7, "ax": 0.0, "ay": 0.9, "w": 0.18, "ph": 0.0},
-            # Segment wp2->wp3 (crossing motion in y).
-            {"name": f"{self.prefix}_1", "cx": 10.2, "cy": -2.9, "ax": 0.0, "ay": 0.8, "w": 0.20, "ph": 1.0},
-            # Segment wp4->wp5 (crossing motion in x).
-            {"name": f"{self.prefix}_2", "cx": 12.6, "cy": -1.3, "ax": 0.8, "ay": 0.0, "w": 0.17, "ph": 2.0},
+            # Right corridor: gentle vertical motion around the segment toward wp4.
+            {"name": f"{self.prefix}_0", "cx": 16.6, "cy": 1.8, "ax": 0.0, "ay": 1.0, "w": 0.14, "ph": 0.0},
+            # Upper corridor: gentle horizontal motion near segment wp2->wp3.
+            {"name": f"{self.prefix}_1", "cx": 9.4, "cy": 10.8, "ax": 1.0, "ay": 0.0, "w": 0.13, "ph": 1.2},
         ]
 
         self.model_names = set()
@@ -108,7 +93,8 @@ class DynamicObstaclesManager:
 
         rospy.sleep(0.5)
         self.delete_legacy_prefixed_models()
-        self.adjust_centers_to_avoid_collisions()
+        if self.auto_relocate:
+            self.adjust_centers_to_avoid_collisions()
         self.spawn_all_once()
         self.start_t = rospy.Time.now().to_sec()
         self.timer = rospy.Timer(rospy.Duration(1.0 / max(self.rate_hz, 1.0)), self.on_timer)
@@ -183,13 +169,7 @@ class DynamicObstaclesManager:
                           cfg["name"], best_x, best_y, best_d)
 
     def spawn_all_once(self):
-        sdf = make_tree_sdf(
-            self.tree_trunk_radius,
-            self.tree_trunk_height,
-            self.tree_canopy_radius,
-            self.tree_canopy_height,
-            self.tree_mass,
-        )
+        sdf = make_checker_cylinder_sdf(self.cyl_radius, self.cyl_height, self.cyl_mass)
         for cfg in self.obstacles:
             name = cfg["name"]
             if name in self.model_names:
@@ -201,7 +181,7 @@ class DynamicObstaclesManager:
             pose.orientation.w = 1.0
             try:
                 self.spawn_model(name, sdf, "", pose, "world")
-                rospy.loginfo("spawned dynamic moving tree: %s", name)
+                rospy.loginfo("spawned dynamic checker cylinder: %s", name)
             except rospy.ServiceException as e:
                 rospy.logwarn("spawn_sdf_model failed for %s: %s", name, str(e))
 

@@ -16,6 +16,8 @@
   <arg name="spawn_x" default="-10.0"/>
   <arg name="spawn_y" default="0.0"/>
   <arg name="spawn_z" default="0.5"/>
+  <arg name="gazebo_gui" default="true"/>
+  <arg name="gazebo_headless" default="false"/>
 
   <!-- ORB-SLAM3 -->
   <arg name="use_orbslam" default="true"/>
@@ -55,14 +57,15 @@
   <arg name="map_size_x" default="80.0"/>
   <arg name="map_size_y" default="80.0"/>
   <arg name="map_size_z" default="6.0"/>
-  <arg name="max_vel" default="1.0"/>
-  <arg name="max_acc" default="0.8"/>
+  <arg name="max_vel" default="1.5"/>
+  <arg name="max_acc" default="1.3"/>
   <arg name="planning_horizon" default="7.5"/>
   <arg name="flight_type" default="1"/>
   <arg name="use_rviz" default="true"/>
   <!-- Keep this false so EGO-Planner is the only avoidance source. -->
   <arg name="enable_dynamic_avoidance" default="false"/>
   <arg name="use_auto_patrol" default="false"/>
+  <arg name="use_dynamic_obstacles" default="true"/>
   <arg name="use_global_planner" default="true"/>
   <arg name="use_global_map_builder" default="true"/>
   <arg name="user_goal_topic" default="/move_base_simple/goal"/>
@@ -85,6 +88,8 @@
     <arg name="spawn_x" value="$(arg spawn_x)"/>
     <arg name="spawn_y" value="$(arg spawn_y)"/>
     <arg name="spawn_z" value="$(arg spawn_z)"/>
+    <arg name="gui" value="$(arg gazebo_gui)"/>
+    <arg name="headless" value="$(arg gazebo_headless)"/>
   </include>
 
   <!-- Execute EGO position command on Gazebo UAV model -->
@@ -99,7 +104,7 @@
     <param name="max_z_speed" value="1.2"/>
     <param name="max_yaw_rate" value="0.9"/>
     <param name="z_min" value="0.3"/>
-    <param name="z_max" value="4.0"/>
+    <param name="z_max" value="2.5"/>
     <param name="enable_dynamic_avoidance" value="$(arg enable_dynamic_avoidance)"/>
     <param name="slow_distance" value="3.2"/>
     <param name="safety_distance" value="1.8"/>
@@ -310,6 +315,21 @@
     <param name="hold_time" value="0.6"/>
   </node>
 
+  <!-- Dynamic obstacle: moving checkerboard cylinder on likely UAV corridor -->
+  <node if="$(arg use_dynamic_obstacles)"
+        pkg="my_gazebo_sim"
+        type="dynamic_obstacles_manager.py"
+        name="dynamic_obstacles_manager"
+        output="screen">
+    <param name="prefix" value="dyn_obs"/>
+    <param name="rate" value="20.0"/>
+    <param name="z_base" value="0.0"/>
+    <param name="cyl_radius" value="0.24"/>
+    <param name="cyl_height" value="1.20"/>
+    <param name="cyl_mass" value="4.0"/>
+    <param name="auto_relocate" value="false"/>
+  </node>
+
   <!-- Auto route publisher: continuously send waypoints to show dynamic avoidance effect -->
   <node if="$(arg use_auto_patrol)"
         pkg="my_gazebo_sim"
@@ -328,22 +348,22 @@
     <param name="start_delay" value="2.0"/>
     <param name="start_min_distance" value="5.0"/>
     <param name="goal_timeout" value="9999.0"/>
-    <param name="no_progress_timeout" value="10.0"/>
-    <param name="progress_epsilon" value="0.15"/>
-    <param name="timeout_min_age" value="8.0"/>
+    <param name="no_progress_timeout" value="22.0"/>
+    <param name="progress_epsilon" value="0.10"/>
+    <param name="timeout_min_age" value="12.0"/>
     <param name="enable_no_progress_timeout" value="true"/>
     <param name="cmd_stale_retrigger_sec" value="1.2"/>
     <param name="cmd_retrigger_interval" value="1.5"/>
     <param name="loop_route" value="false"/>
     <rosparam param="route_points">
-      # Multi-waypoint route inside the highlighted region for clearer avoidance behavior.
-      - [0.0, 10.0, 0.5]
-      - [8.0, 11.0, 0.5]
-      - [18.0, 9.0, 0.5]
-      - [20.0, 0.0, 0.5]
-      - [14.0, -9.0, 1.0]
-      - [3.0, -10.0, 1.0]
-      - [0.0, -2.0, 1.0]
+      # Updated waypoints: keep larger clearance from trees in forest0.world.
+      - [-1.0, 3.0, 1.0]
+      - [0.0, 7.0, 1.0]
+      - [13.5, 13.5, 1.0]
+      - [18.0, -9.0, 1.0]
+      - [10.0, -5.0, 1.0]
+      - [4.0, -6.0, 1.0]
+      - [1.0, 1.0, 1.0]
     </rosparam>
   </node>
 

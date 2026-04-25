@@ -109,6 +109,20 @@ class OdomSanityFilter:
                 # Common ORB init/drift issue: z goes out of range while xy is still usable.
                 # Accept this sample after clamping z to keep navigation chain alive.
                 if reason == "z_out_of_range" and self.accept_z_outlier_with_clamp:
+                    # Guard: do not accept z-clamped sample if XY jump is too large.
+                    if self.last_good is not None:
+                        lp = self.last_good.pose.pose.position
+                        p_raw = msg.pose.pose.position
+                        dxy = math.hypot(p_raw.x - lp.x, p_raw.y - lp.y)
+                        if dxy > self.max_jump_xy:
+                            self.consecutive_rejects += 1
+                            rospy.logwarn_throttle(
+                                1.0,
+                                "odom_sanity_filter rejected z-clamp sample due to large XY jump: dxy=%.2f > %.2f",
+                                dxy,
+                                self.max_jump_xy,
+                            )
+                            return
                     zfixed = copy.deepcopy(msg)
                     p = zfixed.pose.pose.position
                     p.z = max(self.min_z, min(self.max_z, p.z))

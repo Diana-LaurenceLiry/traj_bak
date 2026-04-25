@@ -95,6 +95,34 @@ def load_static_obs_from_world(world_file):
     return out
 
 
+def infer_world_file(world_file_arg):
+    """Resolve world file path.
+
+    Priority:
+    1) explicit --world_file
+    2) parse default world_name from ego_orb_gazebo_bridge.launch
+    """
+    if world_file_arg and os.path.isfile(world_file_arg):
+        return world_file_arg
+
+    launch_file = "/home/lry/catkin_ws/src/my_gazebo_sim/launch/ego_orb_gazebo_bridge.launch"
+    if not os.path.isfile(launch_file):
+        return ""
+
+    try:
+        root = ET.parse(launch_file).getroot()
+    except Exception:
+        return ""
+
+    for arg in root.findall("arg"):
+        if arg.attrib.get("name", "") == "world_name":
+            w = arg.attrib.get("default", "").strip()
+            if w and os.path.isfile(w):
+                return w
+            break
+    return ""
+
+
 def euclid3(a, b):
     return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2)
 
@@ -130,6 +158,55 @@ def compute_waypoint_reached_count(odom_samples, mission_start, mission_end, wp_
         if ok:
             reached += 1
     return reached
+
+
+def find_final_waypoint_reach_time(odom_samples, mission_start, mission_end, wp_points, xy_thresh, z_thresh):
+    """Return first timestamp when the final waypoint is reached, else None."""
+    if not wp_points:
+        return None
+    final_idx = max(p[0] for p in wp_points)
+    target = None
+    for p in wp_points:
+        if p[0] == final_idx:
+            target = p
+            break
+    if target is None:
+        return None
+
+    _, wx, wy, wz = target
+    for ts, ox, oy, oz in odom_samples:
+        if ts < mission_start or ts > mission_end:
+            continue
+        dxy = math.hypot(ox - wx, oy - wy)
+        dz = abs(oz - wz)
+        if dxy <= xy_thresh and dz <= z_thresh:
+            return ts
+    return None
+
+
+def set_compact_xy_limits(ax, xs, ys, goal_xy, pad=2.0):
+    """Auto-focus XY plot around trajectory/goals for cleaner visualization."""
+    pts = []
+    if xs and ys:
+        pts.extend(zip(xs, ys))
+    if goal_xy:
+        pts.extend(goal_xy)
+    if not pts:
+        return
+
+    min_x = min(p[0] for p in pts)
+    max_x = max(p[0] for p in pts)
+    min_y = min(p[1] for p in pts)
+    max_y = max(p[1] for p in pts)
+
+    dx = max(1.0, max_x - min_x)
+    dy = max(1.0, max_y - min_y)
+    cx = 0.5 * (min_x + max_x)
+    cy = 0.5 * (min_y + max_y)
+    half = 0.5 * max(dx, dy) + max(0.5, pad)
+
+    ax.set_xlim(cx - half, cx + half)
+    ax.set_ylim(cy - half, cy + half)
 
 
 def collision_episodes(dist_series, threshold):
@@ -332,7 +409,16 @@ def process_one_bag(bag_path, args, stamp):
         raise RuntimeError(f"{bag_name}: No odom samples in bag")
 
     mission_start = goal_samples[0][0] if goal_samples else odom_samples[0][0]
-    mission_end = finished_route_t if finished_route_t is not None else odom_samples[-1][0]
+    mission_end_raw = finished_route_t if finished_route_t is not None else odom_samples[-1][0]
+    final_wp_reach_t = find_final_waypoint_reach_time(
+        odom_samples,
+        mission_start,
+        mission_end_raw,
+        list(wp_points.values()),
+        args.wp_reach_xy_thresh,
+        args.wp_reach_z_thresh,
+    )
+    mission_end = final_wp_reach_t if (finished_route_t is None and final_wp_reach_t is not None) else mission_end_raw
     if mission_end < mission_start:
         mission_end = odom_samples[-1][0]
 
@@ -542,11 +628,13 @@ def process_one_bag(bag_path, args, stamp):
                 marker="s",
                 label="static obs",
             )
+        goal_xy_for_focus = []
         if wp_points:
             # Prefer true waypoint index from auto_goal_patrol logs: wp[1], wp[2], ...
             ordered_wp = [wp_points[k] for k in sorted(wp_points.keys())]
             gx = [g[1] for g in ordered_wp]
             gy = [g[2] for g in ordered_wp]
+            goal_xy_for_focus = list(zip(gx, gy))
             ax.scatter(gx, gy, c="k", s=20, alpha=0.6, label="goals")
             if len(ordered_wp) >= 2:
                 ax.plot(gx, gy, "k--", linewidth=0.9, alpha=0.35, label="goal order")
@@ -564,6 +652,7 @@ def process_one_bag(bag_path, args, stamp):
                     uniq_goals.append((gx, gy, gz))
             gx = [g[0] for g in uniq_goals]
             gy = [g[1] for g in uniq_goals]
+            goal_xy_for_focus = list(zip(gx, gy))
             ax.scatter(gx, gy, c="k", s=20, alpha=0.6, label="goals")
             if len(uniq_goals) >= 2:
                 ax.plot(gx, gy, "k--", linewidth=0.9, alpha=0.35, label="goal order")
@@ -572,6 +661,7 @@ def process_one_bag(bag_path, args, stamp):
         for name, pts in dyn_tracks.items():
             if len(pts) >= 2:
                 ax.plot([p[0] for p in pts], [p[1] for p in pts], "--", linewidth=1.0, alpha=0.7, label=name)
+        set_compact_xy_limits(ax, xs, ys, goal_xy_for_focus, pad=args.xy_focus_pad)
         ax.set_xlabel("x (m)")
         ax.set_ylabel("y (m)")
         ax.set_title(f"Trajectory XY - {bag_name} ({method})")
@@ -633,10 +723,12 @@ def main():
     parser.add_argument("--goal_topic", default="/move_base_simple/goal")
     parser.add_argument("--model_states_topic", default="/gazebo/model_states")
     parser.add_argument("--world_file", default="", help="Optional .world path for static obstacle overlay")
+    parser.add_argument("--xy_focus_pad", type=float, default=1.0, help="XY plot extra margin around traj/goals (m)")
     parser.add_argument("--collision_threshold", type=float, default=0.45)
     parser.add_argument("--wp_reach_xy_thresh", type=float, default=1.0)
     parser.add_argument("--wp_reach_z_thresh", type=float, default=0.5)
     args = parser.parse_args()
+    args.world_file = infer_world_file(args.world_file)
 
     os.makedirs(args.output_dir, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
