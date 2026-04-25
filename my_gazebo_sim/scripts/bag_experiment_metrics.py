@@ -515,10 +515,22 @@ def process_one_bag(bag_path, args, stamp):
             ax.plot(xs, ys, "b-", linewidth=1.6, label="UAV trajectory")
             ax.scatter([xs[0]], [ys[0]], c="g", s=40, label="start")
             ax.scatter([xs[-1]], [ys[-1]], c="r", s=40, label="end")
-        merged_static = world_static_xy if world_static_xy else static_xy
-        if merged_static:
-            spts = list(merged_static.values())
-            # Avoid over-dense scatter when there are too many static models.
+        if world_static_xy:
+            # Draw every parsed tree from world file as round dots (no coord text).
+            tree_pts = list(world_static_xy.values())
+            ax.scatter(
+                [p[0] for p in tree_pts],
+                [p[1] for p in tree_pts],
+                c="lightgray",
+                s=12,
+                alpha=0.65,
+                marker="o",
+                edgecolors="none",
+                label="world trees",
+            )
+        elif static_xy:
+            # Fallback: static models from /gazebo/model_states.
+            spts = list(static_xy.values())
             stride = max(1, len(spts) // 2500)
             spts = spts[::stride]
             ax.scatter(
