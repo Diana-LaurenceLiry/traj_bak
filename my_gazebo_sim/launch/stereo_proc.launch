@@ -1,0 +1,15 @@
+<launch>
+  <arg name="left_image_topic" default="/camera/infra1/image_rect_raw"/>
+  <arg name="left_camera_info_topic" default="/camera/infra1/camera_info"/>
+  <arg name="right_image_topic" default="/camera/infra2/image_rect_raw"/>
+  <arg name="right_camera_info_topic" default="/camera/infra2/camera_info"/>
+  <arg name="points2_topic" default="/camera/depth/points"/>
+
+  <node pkg="stereo_image_proc" type="stereo_image_proc" name="stereo_image_proc" output="screen">
+    <remap from="left/image_raw" to="$(arg left_image_topic)"/>
+    <remap from="left/camera_info" to="$(arg left_camera_info_topic)"/>
+    <remap from="right/image_raw" to="$(arg right_image_topic)"/>
+    <remap from="right/camera_info" to="$(arg right_camera_info_topic)"/>
+    <remap from="points2" to="$(arg points2_topic)"/>
+  </node>
+</launch>

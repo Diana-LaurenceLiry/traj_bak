@@ -1,0 +1,25 @@
+local_costmap:
+  global_frame: odom
+  robot_base_frame: base_link
+  update_frequency: 4.0
+  publish_frequency: 5.0
+  transform_tolerance: 1.0
+  rolling_window: true
+  width: 6.0
+  height: 6.0
+  resolution: 0.05
+  track_unknown_space: false
+
+  plugins:
+    - {name: static_layer, type: "costmap_2d::StaticLayer"}
+    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+  static_layer:
+    map_topic: /occupancy_map
+    subscribe_to_updates: false
+    track_unknown_space: false
+    lethal_cost_threshold: 80
+
+  inflation_layer:
+    inflation_radius: 0.20
+    cost_scaling_factor: 6.0

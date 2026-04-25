@@ -1,0 +1,55 @@
+<launch>
+  <arg name="use_sim_bridge" default="true"/>
+  <arg name="use_imu" default="false"/>
+
+  <arg name="left_image_topic" default="/camera/infra1/image_rect_raw"/>
+  <arg name="left_camera_info_topic" default="/camera/infra1/camera_info"/>
+  <arg name="right_image_topic" default="/camera/infra2/image_rect_raw"/>
+  <arg name="right_camera_info_topic" default="/camera/infra2/camera_info"/>
+  <arg name="points_topic" default="/camera/depth/points"/>
+  <arg name="map_topic" default="/occupancy_map"/>
+  <arg name="map_frame" default="odom"/>
+  <arg name="use_relative_height_filter" default="true"/>
+  <arg name="robot_frame" default="base_link"/>
+  <arg name="rel_min_z" default="-0.08"/>
+  <arg name="rel_max_z" default="0.45"/>
+
+  <arg name="sim_left_image_topic" default="/left_camera/image_raw"/>
+  <arg name="sim_left_camera_info_topic" default="/left_camera/camera_info"/>
+  <arg name="sim_right_image_topic" default="/right_camera/image_raw"/>
+  <arg name="sim_right_camera_info_topic" default="/right_camera/camera_info"/>
+  <arg name="sim_imu_topic" default="/imu"/>
+  <arg name="imu_topic" default="/camera/imu"/>
+
+  <include if="$(arg use_sim_bridge)" file="$(find my_gazebo_sim)/launch/sim_to_d435i_bridge.launch">
+    <arg name="use_imu" value="$(arg use_imu)"/>
+    <arg name="sim_left_image_topic" value="$(arg sim_left_image_topic)"/>
+    <arg name="sim_left_camera_info_topic" value="$(arg sim_left_camera_info_topic)"/>
+    <arg name="sim_right_image_topic" value="$(arg sim_right_image_topic)"/>
+    <arg name="sim_right_camera_info_topic" value="$(arg sim_right_camera_info_topic)"/>
+    <arg name="sim_imu_topic" value="$(arg sim_imu_topic)"/>
+    <arg name="d435i_left_image_topic" value="$(arg left_image_topic)"/>
+    <arg name="d435i_left_camera_info_topic" value="$(arg left_camera_info_topic)"/>
+    <arg name="d435i_right_image_topic" value="$(arg right_image_topic)"/>
+    <arg name="d435i_right_camera_info_topic" value="$(arg right_camera_info_topic)"/>
+    <arg name="d435i_imu_topic" value="$(arg imu_topic)"/>
+  </include>
+
+  <include file="$(find my_gazebo_sim)/launch/stereo_proc.launch">
+    <arg name="left_image_topic" value="$(arg left_image_topic)"/>
+    <arg name="left_camera_info_topic" value="$(arg left_camera_info_topic)"/>
+    <arg name="right_image_topic" value="$(arg right_image_topic)"/>
+    <arg name="right_camera_info_topic" value="$(arg right_camera_info_topic)"/>
+    <arg name="points2_topic" value="$(arg points_topic)"/>
+  </include>
+
+  <include file="$(find my_gazebo_sim)/launch/map_builder.launch">
+    <arg name="cloud_topic" value="$(arg points_topic)"/>
+    <arg name="map_topic" value="$(arg map_topic)"/>
+    <arg name="map_frame" value="$(arg map_frame)"/>
+    <arg name="use_relative_height_filter" value="$(arg use_relative_height_filter)"/>
+    <arg name="robot_frame" value="$(arg robot_frame)"/>
+    <arg name="rel_min_z" value="$(arg rel_min_z)"/>
+    <arg name="rel_max_z" value="$(arg rel_max_z)"/>
+  </include>
+</launch>

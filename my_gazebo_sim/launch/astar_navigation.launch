@@ -1,0 +1,78 @@
+<launch>
+  <param name="/use_sim_time" value="true"/>
+
+  <arg name="world_name" default="$(find my_gazebo_sim)/worlds/nav_obstacle.world"/>
+  <arg name="robot_urdf" default="$(find my_gazebo_sim)/urdf/simple_diffbot_depth.urdf"/>
+
+  <arg name="cloud_topic" default="/depth_camera/depth/points"/>
+  <arg name="map_topic" default="/occupancy_map"/>
+  <arg name="odom_topic" default="/odom"/>
+  <arg name="goal_topic" default="/move_base_simple/goal"/>
+  <arg name="path_topic" default="/global_path"/>
+  <arg name="cmd_topic" default="/cmd_vel"/>
+  <arg name="cmd_raw_topic" default="/cmd_vel_raw"/>
+
+  <arg name="use_obstacle_avoidance" default="true"/>
+  <arg name="use_rviz" default="true"/>
+  <arg name="rviz_config" default="/home/lry/catkin_ws/src/my_gazebo_sim/gazebo_nav.rviz"/>
+
+
+  <node pkg="my_gazebo_sim"
+        type="astar_global_planner.py"
+        name="astar_global_planner"
+        output="screen">
+    <param name="map_topic" value="$(arg map_topic)"/>
+    <param name="odom_topic" value="$(arg odom_topic)"/>
+    <param name="goal_topic" value="$(arg goal_topic)"/>
+    <param name="path_topic" value="$(arg path_topic)"/>
+    <param name="occupancy_threshold" value="50"/>
+    <param name="unknown_is_obstacle" value="false"/>
+    <param name="replan_rate" value="1.0"/>
+    <param name="goal_tolerance" value="0.20"/>
+  </node>
+
+  <node pkg="my_gazebo_sim"
+        type="path_follower.py"
+        name="path_follower"
+        output="screen">
+    <param name="path_topic" value="$(arg path_topic)"/>
+    <param name="odom_topic" value="$(arg odom_topic)"/>
+    <param name="cmd_topic" value="$(arg cmd_raw_topic)"/>
+    <param name="lookahead_dist" value="0.45"/>
+    <param name="goal_tolerance" value="0.20"/>
+    <param name="max_linear" value="0.45"/>
+    <param name="max_angular" value="1.2"/>
+    <param name="k_angular" value="1.8"/>
+    <param name="rotate_in_place_thresh" value="0.75"/>
+    <param name="control_rate" value="15.0"/>
+  </node>
+
+  <node if="$(arg use_obstacle_avoidance)"
+        pkg="my_gazebo_sim"
+        type="obstacle_avoidance.py"
+        name="obstacle_avoidance"
+        output="screen">
+    <param name="enabled" value="true"/>
+    <param name="cmd_in_topic" value="$(arg cmd_raw_topic)"/>
+    <param name="cmd_out_topic" value="$(arg cmd_topic)"/>
+    <param name="map_topic" value="$(arg map_topic)"/>
+    <param name="odom_topic" value="$(arg odom_topic)"/>
+    <param name="forward_distance" value="1.2"/>
+    <param name="corridor_half_width" value="0.40"/>
+    <param name="critical_distance" value="0.40"/>
+    <param name="slowdown_distance" value="1.0"/>
+    <param name="occupancy_threshold" value="50"/>
+    <param name="unknown_is_obstacle" value="false"/>
+    <param name="min_turn_rate" value="0.20"/>
+    <param name="max_turn_rate" value="0.80"/>
+    <param name="max_output_linear" value="0.8"/>
+  </node>
+
+  <node unless="$(arg use_obstacle_avoidance)"
+        pkg="topic_tools"
+        type="relay"
+        name="cmd_vel_passthrough"
+        args="$(arg cmd_raw_topic) $(arg cmd_topic)"
+        output="screen"/>
+
+</launch>

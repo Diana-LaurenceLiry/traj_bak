@@ -1,0 +1,350 @@
+<launch>
+  <param name="/use_sim_time" value="true"/>
+  <!-- Keep ROS/Gazebo nodes on system Python to avoid conda python missing deps -->
+  <env name="PATH" value="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$(optenv PATH)"/>
+  <!-- Add ADS local models and system Gazebo models -->
+  <env name="GAZEBO_MODEL_PATH" value="/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/models/ADS_models:/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/models/gazebo_models:/usr/share/gazebo-11/models:$(optenv GAZEBO_MODEL_PATH)"/>
+  <!-- forest_gen worlds resources -->
+  <env name="GAZEBO_RESOURCE_PATH" value="/home/lry/catkin_ws/src/UAV_world/forest_gen-master:$(optenv GAZEBO_RESOURCE_PATH)"/>
+  <!-- Avoid long blocking on remote model database when offline -->
+  <env name="GAZEBO_MODEL_DATABASE_URI" value=""/>
+
+  <!-- Gazebo world + UAV model -->
+  <arg name="world_name" default="/home/lry/catkin_ws/src/UAV_world/forest_gen-master/big_worlds/forest0.world"/>
+  <arg name="robot_urdf" default="$(find my_gazebo_sim)/urdf/simple_uav_depth.urdf"/>
+  <arg name="model_name" default="simple_uav"/>
+  <arg name="spawn_x" default="-10.0"/>
+  <arg name="spawn_y" default="0.0"/>
+  <arg name="spawn_z" default="0.5"/>
+
+  <!-- ORB-SLAM3 -->
+  <arg name="use_orbslam" default="true"/>
+  <arg name="orb_node_type" default="RGBD"/>
+  <arg name="orb_voc_file" default="/home/lry/ORB_SLAM3/Vocabulary/ORBvoc.txt"/>
+  <arg name="orb_settings_file" default="/home/lry/catkin_ws/src/my_gazebo_sim/config/orb_gazebo_rgbd.yaml"/>
+  <arg name="orb_publish_tf" default="false"/>
+  <arg name="orb_left_topic" default="/camera/infra1/image_rect_raw"/>
+  <arg name="orb_right_topic" default="/camera/infra2/image_rect_raw"/>
+  <arg name="orb_rgb_topic" default="/depth_camera/image_raw"/>
+  <arg name="orb_depth_topic" default="/depth_camera/depth/image_raw"/>
+
+  <!-- Odom topics (convention):
+       /odom                           : Gazebo truth odom
+       /visual_slam/odom_raw           : ORB-SLAM raw odom
+       /visual_slam/odom_aligned       : ORB aligned odom
+       /visual_slam/odom_safe_filtered : filtered ORB odom -->
+  <!-- Inputs to EGO-Planner -->
+  <arg name="orb_odom_topic" default="/visual_slam/odom_raw"/>
+  <arg name="orb_aligned_topic" default="/visual_slam/odom_aligned"/>
+  <arg name="use_orb_alignment" default="true"/>
+  <arg name="odom_topic" default="/visual_slam/odom_safe_filtered"/>
+  <arg name="fallback_odom_topic" default="/odom"/>
+  <arg name="use_odom_filter" default="true"/>
+  <!-- Navigation stack odom source:
+       follow odom_topic by default. -->
+  <arg name="navigation_odom_topic" default="$(arg odom_topic)"/>
+  <arg name="use_gazebo_truth_fallback" default="true"/>
+  <!-- IMPORTANT: ego_planner /grid_map/cloud expects points in world frame.
+       Raw Gazebo depth points are in camera frame, so disable cloud input here
+       and use depth+odom fusion path instead. -->
+  <arg name="cloud_topic" default="/grid_map/cloud_unused"/>
+  <arg name="depth_topic" default="/depth_camera/depth/image_raw"/>
+  <arg name="camera_pose_topic" default="/camera_pose"/>
+
+  <!-- Planner params -->
+  <arg name="map_size_x" default="80.0"/>
+  <arg name="map_size_y" default="80.0"/>
+  <arg name="map_size_z" default="6.0"/>
+  <arg name="max_vel" default="1.0"/>
+  <arg name="max_acc" default="0.8"/>
+  <arg name="planning_horizon" default="7.5"/>
+  <arg name="flight_type" default="1"/>
+  <arg name="use_rviz" default="true"/>
+  <!-- Keep this false so EGO-Planner is the only avoidance source. -->
+  <arg name="enable_dynamic_avoidance" default="false"/>
+  <arg name="use_auto_patrol" default="false"/>
+  <arg name="use_global_planner" default="true"/>
+  <arg name="use_global_map_builder" default="true"/>
+  <arg name="user_goal_topic" default="/move_base_simple/goal"/>
+  <arg name="planner_goal_topic" default="/planner/ego_goal"/>
+  <arg name="global_path_topic" default="/planner/global_path"/>
+  <arg name="global_map_topic" default="/occupancy_map"/>
+  <arg name="global_map_frame" default="odom"/>
+  <arg name="publish_world_odom_tf" default="true"/>
+
+  <!-- Camera intrinsics used by EGO local mapping -->
+  <arg name="cx" default="321.04638671875"/>
+  <arg name="cy" default="243.44969177246094"/>
+  <arg name="fx" default="387.229248046875"/>
+  <arg name="fy" default="387.229248046875"/>
+
+  <include file="$(find my_gazebo_sim)/launch/simple_uav_gazebo.launch">
+    <arg name="world_name" value="$(arg world_name)"/>
+    <arg name="robot_urdf" value="$(arg robot_urdf)"/>
+    <arg name="model_name" value="$(arg model_name)"/>
+    <arg name="spawn_x" value="$(arg spawn_x)"/>
+    <arg name="spawn_y" value="$(arg spawn_y)"/>
+    <arg name="spawn_z" value="$(arg spawn_z)"/>
+  </include>
+
+  <!-- Execute EGO position command on Gazebo UAV model -->
+  <node pkg="my_gazebo_sim"
+        type="poscmd_to_gazebo.py"
+        name="poscmd_to_gazebo"
+        output="screen">
+    <param name="model_name" value="$(arg model_name)"/>
+    <param name="cmd_topic" value="planning/pos_cmd"/>
+    <param name="max_xy_speed" value="$(arg max_vel)"/>
+    <param name="max_z_speed" value="1.2"/>
+    <param name="max_yaw_rate" value="0.9"/>
+    <param name="z_min" value="0.3"/>
+    <param name="z_max" value="4.0"/>
+    <param name="enable_dynamic_avoidance" value="$(arg enable_dynamic_avoidance)"/>
+    <param name="slow_distance" value="3.2"/>
+    <param name="safety_distance" value="1.8"/>
+    <param name="repel_gain" value="1.5"/>
+    <param name="max_repel_speed" value="1.8"/>
+    <param name="keep_level_attitude" value="true"/>
+    <param name="use_yaw_control" value="true"/>
+    <param name="kp_yaw" value="0.6"/>
+    <param name="align_heading_before_move" value="false"/>
+    <param name="yaw_start_threshold" value="0.18"/>
+    <param name="yaw_realign_threshold" value="0.35"/>
+    <param name="lock_yaw_while_moving" value="false"/>
+  </node>
+
+  <!-- ORB-SLAM3 odometry output -->
+  <node if="$(arg use_orbslam)"
+        pkg="ORB_SLAM3"
+        type="$(arg orb_node_type)"
+        name="orbslam3"
+        output="screen"
+        args="$(arg orb_voc_file) $(arg orb_settings_file)">
+    <param name="rgb_topic" value="$(arg orb_rgb_topic)"/>
+    <param name="depth_topic" value="$(arg orb_depth_topic)"/>
+    <param name="publish_tf" value="$(arg orb_publish_tf)"/>
+    <remap from="/camera/left/image_raw" to="$(arg orb_left_topic)"/>
+    <remap from="/camera/right/image_raw" to="$(arg orb_right_topic)"/>
+    <remap from="/camera/color/image_raw" to="$(arg orb_rgb_topic)"/>
+    <remap from="/camera/depth/image_rect_raw" to="$(arg orb_depth_topic)"/>
+    <remap from="/odom" to="$(arg orb_odom_topic)"/>
+  </node>
+
+  <!-- Align ORB odom frame to reference odom frame using first matched sample pair -->
+  <node pkg="my_gazebo_sim"
+        type="orb_odom_aligner.py"
+        name="orb_odom_aligner"
+        output="screen">
+    <param name="input_topic" value="$(arg orb_odom_topic)"/>
+    <param name="ref_topic" value="$(arg fallback_odom_topic)"/>
+    <param name="output_topic" value="$(arg orb_aligned_topic)"/>
+    <param name="align_on_first_pair" value="true"/>
+    <param name="freeze_after_align" value="true"/>
+    <param name="min_stamp_dt" value="0.2"/>
+    <param name="pass_through_before_align" value="true"/>
+  </node>
+
+  <!-- Sanitize ORB odometry and fallback to Gazebo odom on outliers -->
+  <node if="$(eval str(arg('use_orbslam')).lower() == 'true' and str(arg('use_odom_filter')).lower() == 'true')" pkg="my_gazebo_sim" type="odom_sanity_filter.py" name="odom_sanity_filter" output="screen">
+    <param name="input_topic" value="$(eval arg('orb_aligned_topic') if str(arg('use_orb_alignment')).lower() == 'true' else arg('orb_odom_topic'))"/>
+    <param name="fallback_topic" value="$(arg fallback_odom_topic)"/>
+    <param name="output_topic" value="$(arg odom_topic)"/>
+    <param name="model_states_topic" value="/gazebo/model_states"/>
+    <param name="model_name" value="$(arg model_name)"/>
+    <param name="use_fallback" value="$(arg use_gazebo_truth_fallback)"/>
+    <param name="min_z" value="0.05"/>
+    <param name="max_z" value="10.0"/>
+    <param name="max_jump_xy" value="0.8"/>
+    <param name="max_jump_z" value="0.5"/>
+    <param name="jump_ref_timeout" value="1000.0"/>
+    <param name="relock_reject_count" value="1000000"/>
+    <param name="stale_timeout" value="1.2"/>
+    <param name="blocked_timeout" value="1.8"/>
+    <param name="allow_raw_when_blocked" value="false"/>
+    <param name="accept_z_outlier_with_clamp" value="true"/>
+  </node>
+
+  <!-- Ensure TF chain exists for RViz: odom -> base_link -->
+  <node pkg="my_gazebo_sim"
+        type="odom_tf_broadcaster.py"
+        name="odom_tf_broadcaster"
+        output="screen">
+    <param name="odom_topic" value="$(arg navigation_odom_topic)"/>
+    <param name="model_states_topic" value="/gazebo/model_states"/>
+    <param name="model_name" value="$(arg model_name)"/>
+    <param name="parent_frame" value="odom"/>
+    <param name="child_frame" value="base_link"/>
+    <param name="use_model_states_fallback" value="true"/>
+  </node>
+
+  <!-- Bridge world and odom frames (identity) so world/odom markers can be visualized together -->
+  <node if="$(arg publish_world_odom_tf)"
+        pkg="tf2_ros"
+        type="static_transform_publisher"
+        name="world_to_odom_tf"
+        args="0 0 0 0 0 0 world odom"/>
+
+  <!-- EGO planner core (without ego built-in simulator.xml) -->
+  <include file="$(find ego_planner)/launch/advanced_param.xml">
+    <arg name="map_size_x_" value="$(arg map_size_x)"/>
+    <arg name="map_size_y_" value="$(arg map_size_y)"/>
+    <arg name="map_size_z_" value="$(arg map_size_z)"/>
+
+    <arg name="odometry_topic" value="$(arg navigation_odom_topic)"/>
+    <arg name="camera_pose_topic" value="$(arg camera_pose_topic)"/>
+    <arg name="depth_topic" value="$(arg depth_topic)"/>
+    <arg name="cloud_topic" value="$(arg cloud_topic)"/>
+
+    <arg name="cx" value="$(arg cx)"/>
+    <arg name="cy" value="$(arg cy)"/>
+    <arg name="fx" value="$(arg fx)"/>
+    <arg name="fy" value="$(arg fy)"/>
+
+    <arg name="max_vel" value="$(arg max_vel)"/>
+    <arg name="max_acc" value="$(arg max_acc)"/>
+    <arg name="planning_horizon" value="$(arg planning_horizon)"/>
+
+    <arg name="flight_type" value="$(arg flight_type)"/>
+
+    <arg name="point_num" value="5"/>
+    <arg name="point0_x" value="-15.0"/>
+    <arg name="point0_y" value="0.0"/>
+    <arg name="point0_z" value="1.0"/>
+    <arg name="point1_x" value="0.0"/>
+    <arg name="point1_y" value="15.0"/>
+    <arg name="point1_z" value="1.0"/>
+    <arg name="point2_x" value="15.0"/>
+    <arg name="point2_y" value="0.0"/>
+    <arg name="point2_z" value="1.0"/>
+    <arg name="point3_x" value="0.0"/>
+    <arg name="point3_y" value="-15.0"/>
+    <arg name="point3_z" value="1.0"/>
+    <arg name="point4_x" value="-15.0"/>
+    <arg name="point4_y" value="0.0"/>
+    <arg name="point4_z" value="1.0"/>
+  </include>
+
+  <!-- Optional global guiding layer: A* on occupancy map -->
+  <node if="$(eval arg('use_global_planner') == 'true' and arg('use_global_map_builder') == 'true')"
+        pkg="my_gazebo_sim"
+        type="map_builder.py"
+        name="global_map_builder"
+        output="screen">
+    <param name="cloud_topic" value="/depth_camera/depth/points"/>
+    <param name="map_topic" value="$(arg global_map_topic)"/>
+    <param name="map_frame" value="$(arg global_map_frame)"/>
+    <param name="resolution" value="0.15"/>
+    <param name="width" value="500"/>
+    <param name="height" value="500"/>
+    <param name="origin_x" value="-37.5"/>
+    <param name="origin_y" value="-37.5"/>
+    <param name="min_range" value="0.3"/>
+    <param name="max_range" value="16.0"/>
+    <param name="min_z" value="0.25"/>
+    <param name="max_z" value="6.0"/>
+    <param name="inflation_radius" value="0.50"/>
+    <param name="reset_each_cloud" value="true"/>
+  </node>
+
+  <node if="$(arg use_global_planner)"
+        pkg="my_gazebo_sim"
+        type="astar_global_planner.py"
+        name="astar_global_planner"
+        output="screen">
+    <param name="map_topic" value="$(arg global_map_topic)"/>
+    <param name="odom_topic" value="$(arg navigation_odom_topic)"/>
+    <param name="goal_topic" value="$(arg user_goal_topic)"/>
+    <param name="path_topic" value="$(arg global_path_topic)"/>
+    <param name="occupancy_threshold" value="50"/>
+    <param name="unknown_is_obstacle" value="false"/>
+    <param name="replan_rate" value="0.5"/>
+    <param name="goal_tolerance" value="0.35"/>
+  </node>
+
+  <node if="$(arg use_global_planner)"
+        pkg="my_gazebo_sim"
+        type="global_path_to_goal.py"
+        name="global_path_to_goal"
+        output="screen">
+    <param name="path_topic" value="$(arg global_path_topic)"/>
+    <param name="odom_topic" value="$(arg navigation_odom_topic)"/>
+    <param name="user_goal_topic" value="$(arg user_goal_topic)"/>
+    <param name="goal_out_topic" value="$(arg planner_goal_topic)"/>
+    <param name="lookahead_distance" value="3.0"/>
+    <param name="switch_distance" value="1.0"/>
+    <param name="publish_interval" value="0.8"/>
+    <param name="min_target_spacing" value="1.2"/>
+    <param name="fallback_to_user_goal" value="true"/>
+  </node>
+
+  <node unless="$(arg use_global_planner)"
+        pkg="topic_tools"
+        type="relay"
+        name="direct_goal_relay"
+        args="$(arg user_goal_topic) $(arg planner_goal_topic)"
+        output="screen"/>
+
+  <!-- Convert B-spline to PositionCommand -->
+  <node pkg="ego_planner" name="traj_server" type="traj_server" output="screen">
+    <remap from="/position_cmd" to="planning/pos_cmd"/>
+    <remap from="/odom_world" to="$(arg navigation_odom_topic)"/>
+    <param name="traj_server/time_forward" value="0.3" type="double"/>
+  </node>
+
+  <!-- Goal input (2D Nav Goal in RViz) -->
+  <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
+    <remap from="~odom" to="$(arg navigation_odom_topic)"/>
+    <remap from="~goal" to="$(arg planner_goal_topic)"/>
+    <remap from="~traj_start_trigger" to="/traj_start_trigger"/>
+    <param name="waypoint_type" value="manual-lonely-waypoint"/>
+  </node>
+
+  <!-- Goal reach feedback -->
+  <node pkg="my_gazebo_sim" type="goal_reach_feedback.py" name="goal_reach_feedback" output="screen">
+    <param name="odom_topic" value="$(arg navigation_odom_topic)"/>
+    <param name="goal_topic" value="$(arg planner_goal_topic)"/>
+    <param name="default_goal_z" value="3.0"/>
+    <param name="xy_tolerance" value="0.35"/>
+    <param name="z_tolerance" value="0.35"/>
+    <param name="hold_time" value="0.6"/>
+  </node>
+
+  <!-- Auto route publisher: continuously send waypoints to show dynamic avoidance effect -->
+  <node if="$(arg use_auto_patrol)"
+        pkg="my_gazebo_sim"
+        type="auto_goal_patrol.py"
+        name="auto_goal_patrol"
+        output="screen">
+    <param name="goal_topic" value="$(arg user_goal_topic)"/>
+    <!-- Use the same filtered odom as planner to keep switching consistent -->
+    <param name="odom_topic" value="$(arg navigation_odom_topic)"/>
+    <param name="cmd_topic" value="planning/pos_cmd"/>
+    <param name="frame_id" value="odom"/>
+    <param name="switch_distance" value="1.0"/>
+    <param name="switch_cooldown" value="0.8"/>
+    <param name="resend_same_goal" value="false"/>
+    <param name="resend_interval" value="2.0"/>
+    <param name="start_delay" value="2.0"/>
+    <param name="start_min_distance" value="5.0"/>
+    <param name="goal_timeout" value="9999.0"/>
+    <param name="no_progress_timeout" value="10.0"/>
+    <param name="progress_epsilon" value="0.15"/>
+    <param name="timeout_min_age" value="8.0"/>
+    <param name="enable_no_progress_timeout" value="true"/>
+    <param name="cmd_stale_retrigger_sec" value="1.2"/>
+    <param name="cmd_retrigger_interval" value="1.5"/>
+    <param name="loop_route" value="false"/>
+    <rosparam param="route_points">
+      # Multi-waypoint route inside the highlighted region for clearer avoidance behavior.
+      - [0.0, 10.0, 0.5]
+      - [8.0, 11.0, 0.5]
+      - [18.0, 9.0, 0.5]
+      - [20.0, 0.0, 0.5]
+      - [14.0, -9.0, 1.0]
+      - [3.0, -10.0, 1.0]
+      - [0.0, -2.0, 1.0]
+    </rosparam>
+  </node>
+
+  <include if="$(arg use_rviz)" file="$(find ego_planner)/launch/rviz.launch"/>
+</launch>

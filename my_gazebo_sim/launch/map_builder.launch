@@ -1,0 +1,43 @@
+<launch>
+  <arg name="cloud_topic" default="/camera/depth/points"/>
+  <arg name="map_topic" default="/occupancy_map"/>
+  <arg name="map_frame" default="odom"/>
+  <arg name="resolution" default="0.05"/>
+  <arg name="width" default="400"/>
+  <arg name="height" default="400"/>
+  <arg name="origin_x" default="-10.0"/>
+  <arg name="origin_y" default="-10.0"/>
+  <arg name="min_range" default="0.0"/>
+  <arg name="max_range" default="20.0"/>
+  <arg name="min_z" default="0.10"/>
+  <arg name="max_z" default="2.0"/>
+  <arg name="inflation_radius" default="0.20"/>
+  <arg name="reset_each_cloud" default="true"/>
+  <arg name="use_relative_height_filter" default="true"/>
+  <arg name="robot_frame" default="base_link"/>
+  <arg name="rel_min_z" default="0.30"/>
+  <arg name="rel_max_z" default="0.45"/>
+  <node pkg="my_gazebo_sim" type="map_builder.py" name="map_builder" output="screen">
+    <param name="cloud_topic" value="$(arg cloud_topic)"/>
+    <param name="map_topic" value="$(arg map_topic)"/>
+    <param name="map_frame" value="$(arg map_frame)"/>
+    <param name="use_relative_height_filter" value="$(arg use_relative_height_filter)"/>
+    <param name="robot_frame" value="$(arg robot_frame)"/>
+    <param name="rel_min_z" value="$(arg rel_min_z)"/>
+    <param name="rel_max_z" value="$(arg rel_max_z)"/>
+
+    <param name="resolution" value="$(arg resolution)"/>
+    <param name="width" value="$(arg width)"/>
+    <param name="height" value="$(arg height)"/>
+    <param name="origin_x" value="$(arg origin_x)"/>
+    <param name="origin_y" value="$(arg origin_y)"/>
+
+    <param name="min_range" value="$(arg min_range)"/>
+    <param name="max_range" value="$(arg max_range)"/>
+    <param name="min_z" value="$(arg min_z)"/>
+    <param name="max_z" value="$(arg max_z)"/>
+
+    <param name="inflation_radius" value="$(arg inflation_radius)"/>
+    <param name="reset_each_cloud" value="$(arg reset_each_cloud)"/>
+  </node>
+</launch>

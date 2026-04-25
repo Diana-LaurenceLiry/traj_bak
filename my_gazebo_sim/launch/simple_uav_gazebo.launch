@@ -1,0 +1,36 @@
+<launch>
+  <arg name="world_name" default="$(find my_gazebo_sim)/worlds/nav_obstacle_3d.world"/>
+  <arg name="robot_urdf" default="$(find my_gazebo_sim)/urdf/simple_uav_depth.urdf"/>
+  <arg name="model_name" default="simple_uav"/>
+  <arg name="spawn_x" default="0.0"/>
+  <arg name="spawn_y" default="0.0"/>
+  <arg name="spawn_z" default="0.8"/>
+
+  <arg name="paused" default="false"/>
+  <arg name="use_sim_time" default="true"/>
+  <arg name="gui" default="true"/>
+  <arg name="headless" default="false"/>
+  <arg name="debug" default="false"/>
+
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(arg world_name)"/>
+    <arg name="paused" value="$(arg paused)"/>
+    <arg name="use_sim_time" value="$(arg use_sim_time)"/>
+    <arg name="gui" value="$(arg gui)"/>
+    <arg name="headless" value="$(arg headless)"/>
+    <arg name="debug" value="$(arg debug)"/>
+  </include>
+
+  <param name="robot_description" textfile="$(arg robot_urdf)"/>
+
+  <node pkg="robot_state_publisher"
+        type="robot_state_publisher"
+        name="robot_state_publisher"
+        output="screen"/>
+
+  <node pkg="gazebo_ros"
+        type="spawn_model"
+        name="spawn_simple_uav"
+        output="screen"
+        args="-urdf -param robot_description -model $(arg model_name) -x $(arg spawn_x) -y $(arg spawn_y) -z $(arg spawn_z)"/>
+</launch>

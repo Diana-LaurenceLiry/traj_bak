@@ -1,0 +1,34 @@
+<launch>
+  <arg name="world_name" default="/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/worlds/ADS_worlds/industrial_world.world"/>
+  <arg name="use_rviz" default="true"/>
+
+  <include file="$(find my_gazebo_sim)/launch/ego_orb_gazebo_bridge.launch">
+    <arg name="world_name" value="$(arg world_name)"/>
+    <arg name="use_rviz" value="$(arg use_rviz)"/>
+    <arg name="use_global_planner" value="false"/>
+    <arg name="use_auto_patrol" value="false"/>
+    <arg name="use_dynamic_obstacles" value="true"/>
+  </include>
+
+  <node pkg="my_gazebo_sim"
+        type="auto_goal_patrol.py"
+        name="auto_goal_patrol_exp"
+        output="screen">
+    <param name="goal_topic" value="/move_base_simple/goal"/>
+    <param name="odom_topic" value="/visual_slam/odom_safe_filtered"/>
+    <param name="cmd_topic" value="planning/pos_cmd"/>
+    <param name="frame_id" value="world"/>
+    <param name="switch_distance" value="0.8"/>
+    <param name="switch_cooldown" value="0.8"/>
+    <param name="resend_same_goal" value="true"/>
+    <param name="resend_interval" value="2.0"/>
+    <param name="start_delay" value="2.0"/>
+    <param name="start_min_distance" value="2.0"/>
+    <param name="goal_timeout" value="9999.0"/>
+    <param name="no_progress_timeout" value="9999.0"/>
+    <param name="timeout_min_age" value="9999.0"/>
+    <param name="enable_no_progress_timeout" value="false"/>
+    <param name="loop_route" value="false"/>
+    <rosparam command="load" file="$(find my_gazebo_sim)/config/compare_route.yaml"/>
+  </node>
+</launch>

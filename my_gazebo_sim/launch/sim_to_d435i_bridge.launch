@@ -1,0 +1,46 @@
+<launch>
+  <arg name="use_imu" default="false"/>
+
+  <arg name="sim_left_image_topic" default="/left_camera/image_raw"/>
+  <arg name="sim_left_camera_info_topic" default="/left_camera/camera_info"/>
+  <arg name="sim_right_image_topic" default="/right_camera/image_raw"/>
+  <arg name="sim_right_camera_info_topic" default="/right_camera/camera_info"/>
+  <arg name="sim_imu_topic" default="/imu"/>
+
+  <arg name="d435i_left_image_topic" default="/camera/infra1/image_rect_raw"/>
+  <arg name="d435i_left_camera_info_topic" default="/camera/infra1/camera_info"/>
+  <arg name="d435i_right_image_topic" default="/camera/infra2/image_rect_raw"/>
+  <arg name="d435i_right_camera_info_topic" default="/camera/infra2/camera_info"/>
+  <arg name="d435i_imu_topic" default="/camera/imu"/>
+
+  <node pkg="topic_tools"
+        type="relay"
+        name="relay_left_image"
+        args="$(arg sim_left_image_topic) $(arg d435i_left_image_topic)"
+        output="screen"/>
+
+  <node pkg="topic_tools"
+        type="relay"
+        name="relay_left_camera_info"
+        args="$(arg sim_left_camera_info_topic) $(arg d435i_left_camera_info_topic)"
+        output="screen"/>
+
+  <node pkg="topic_tools"
+        type="relay"
+        name="relay_right_image"
+        args="$(arg sim_right_image_topic) $(arg d435i_right_image_topic)"
+        output="screen"/>
+
+  <node pkg="topic_tools"
+        type="relay"
+        name="relay_right_camera_info"
+        args="$(arg sim_right_camera_info_topic) $(arg d435i_right_camera_info_topic)"
+        output="screen"/>
+
+  <node if="$(arg use_imu)"
+        pkg="topic_tools"
+        type="relay"
+        name="relay_imu"
+        args="$(arg sim_imu_topic) $(arg d435i_imu_topic)"
+        output="screen"/>
+</launch>

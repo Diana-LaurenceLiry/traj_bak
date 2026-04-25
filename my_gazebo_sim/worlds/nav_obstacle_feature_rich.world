@@ -1,0 +1,369 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <world name="nav_obstacle_world">
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+    <include>
+      <uri>model://sun</uri>
+    </include>
+
+    <model name="wall_1">
+      <static>true</static>
+      <pose>2.0 0.0 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.2 2.0 1.0</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.2 2.0 1.0</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.8 0.2 0.2 1</ambient>
+            <diffuse>0.8 0.2 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="box_1">
+      <static>true</static>
+      <pose>1.2 0.8 0.25 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.5 0.5 0.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.5 0.5 0.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.2 0.8 0.2 1</ambient>
+            <diffuse>0.2 0.8 0.2 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="box_2">
+      <static>true</static>
+      <pose>3.0 -0.8 0.25 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.6 0.6 0.5</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.6 0.6 0.5</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.2 0.2 0.8 1</ambient>
+            <diffuse>0.2 0.2 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Feature-rich floor patch to increase ORB corners -->
+    <model name="feature_floor_patch">
+      <static>true</static>
+      <pose>2.0 0.0 0.005 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>6.0 3.0 0.01</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>6.0 3.0 0.01</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.75 0.75 0.75 1</ambient>
+            <diffuse>0.75 0.75 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Thin textured-like panels (visual corners) -->
+    <model name="feature_panel_left">
+      <static>true</static>
+      <pose>1.6 1.25 0.45 0 0 0.25</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1.2 0.02 0.9</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1.2 0.02 0.9</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.15 0.15 0.15 1</ambient>
+            <diffuse>0.15 0.15 0.15 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="feature_panel_right">
+      <static>true</static>
+      <pose>2.9 -1.25 0.45 0 0 -0.32</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1.0 0.02 0.9</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1.0 0.02 0.9</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.9 1</ambient>
+            <diffuse>0.9 0.9 0.9 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Corner markers: alternating small cubes -->
+    <model name="feature_cube_1">
+      <static>true</static>
+      <pose>0.8 1.1 0.08 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 0.12 0.16</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 0.12 0.16</size></box></geometry><material><ambient>0.95 0.95 0.95 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="feature_cube_2">
+      <static>true</static>
+      <pose>1.0 1.1 0.08 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 0.12 0.16</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 0.12 0.16</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="feature_cube_3">
+      <static>true</static>
+      <pose>1.2 1.1 0.08 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 0.12 0.16</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 0.12 0.16</size></box></geometry><material><ambient>0.95 0.95 0.95 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="feature_cube_4">
+      <static>true</static>
+      <pose>1.4 1.1 0.08 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 0.12 0.16</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 0.12 0.16</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="feature_cube_5">
+      <static>true</static>
+      <pose>2.2 -1.1 0.08 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 0.12 0.16</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 0.12 0.16</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="feature_cube_6">
+      <static>true</static>
+      <pose>2.4 -1.1 0.08 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 0.12 0.16</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 0.12 0.16</size></box></geometry><material><ambient>0.95 0.95 0.95 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="feature_cube_7">
+      <static>true</static>
+      <pose>2.6 -1.1 0.08 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 0.12 0.16</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 0.12 0.16</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="feature_cube_8">
+      <static>true</static>
+      <pose>2.8 -1.1 0.08 0 0 0</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.12 0.12 0.16</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.12 0.12 0.16</size></box></geometry><material><ambient>0.95 0.95 0.95 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Vertical poles add edge features in depth -->
+    <model name="feature_pole_1">
+      <static>true</static>
+      <pose>1.0 -0.2 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.05</radius>
+              <length>1.0</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder>
+              <radius>0.05</radius>
+              <length>1.0</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.1 1</ambient>
+            <diffuse>0.9 0.9 0.1 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="feature_pole_2">
+      <static>true</static>
+      <pose>2.6 0.35 0.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.05</radius>
+              <length>1.0</length>
+            </cylinder>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder>
+              <radius>0.05</radius>
+              <length>1.0</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.1 0.9 0.9 1</ambient>
+            <diffuse>0.1 0.9 0.9 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- High-frequency stripe wall (for ORB corners) -->
+    <model name="stripe_wall_white">
+      <static>true</static>
+      <pose>4.2 0.0 0.6 0 0 1.5708</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1.8 0.03 1.2</size>
+            </box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1.8 0.03 1.2</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.92 0.92 0.92 1</ambient>
+            <diffuse>0.92 0.92 0.92 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="stripe_wall_black_1">
+      <static>true</static>
+      <pose>4.19 -0.6 0.6 0 0 1.5708</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.28 0.035 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.28 0.035 1.2</size></box></geometry><material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.08 0.08 0.08 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="stripe_wall_black_2">
+      <static>true</static>
+      <pose>4.19 -0.2 0.6 0 0 1.5708</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.28 0.035 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.28 0.035 1.2</size></box></geometry><material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.08 0.08 0.08 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="stripe_wall_black_3">
+      <static>true</static>
+      <pose>4.19 0.2 0.6 0 0 1.5708</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.28 0.035 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.28 0.035 1.2</size></box></geometry><material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.08 0.08 0.08 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="stripe_wall_black_4">
+      <static>true</static>
+      <pose>4.19 0.6 0.6 0 0 1.5708</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>0.28 0.035 1.2</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>0.28 0.035 1.2</size></box></geometry><material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.08 0.08 0.08 1</diffuse></material></visual>
+      </link>
+    </model>
+
+    <!-- Floor stripe markers near start -->
+    <model name="floor_stripe_1">
+      <static>true</static>
+      <pose>0.8 -0.5 0.012 0 0 0.2</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.0 0.05 0.01</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.0 0.05 0.01</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="floor_stripe_2">
+      <static>true</static>
+      <pose>0.9 -0.2 0.012 0 0 -0.15</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.0 0.05 0.01</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.0 0.05 0.01</size></box></geometry><material><ambient>0.95 0.95 0.95 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual>
+      </link>
+    </model>
+    <model name="floor_stripe_3">
+      <static>true</static>
+      <pose>1.0 0.1 0.012 0 0 0.18</pose>
+      <link name="link">
+        <collision name="collision"><geometry><box><size>1.0 0.05 0.01</size></box></geometry></collision>
+        <visual name="visual"><geometry><box><size>1.0 0.05 0.01</size></box></geometry><material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.1 0.1 0.1 1</diffuse></material></visual>
+      </link>
+    </model>
+  </world>
+</sdf>

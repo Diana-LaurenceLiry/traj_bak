@@ -1,0 +1,119 @@
+<launch>
+  <param name="/use_sim_time" value="true"/>
+
+  <!-- Gazebo sim package -->
+  <arg name="gazebo_launch" default="$(find my_gazebo_sim)/launch/simple_diffbot_gazebo.launch"/>
+  <arg name="robot_urdf" default="$(find my_gazebo_sim)/urdf/simple_diffbot_depth.urdf"/>
+
+  <!-- Topics -->
+  <arg name="odom_topic" default="/odom"/>
+  <arg name="cmd_topic" default="/cmd_vel"/>
+  <arg name="cmd_raw_topic" default="/cmd_vel_raw"/>
+  <arg name="marker_topic" default="/goal_marker"/>
+  <arg name="map_topic" default="/occupancy_map"/>
+  <arg name="frame_id" default="map"/>
+  <arg name="use_obstacle_avoidance" default="false"/>
+  <arg name="oa_forward_distance" default="1.4"/>
+  <arg name="oa_corridor_half_width" default="0.40"/>
+  <arg name="oa_critical_distance" default="0.45"/>
+  <arg name="oa_slowdown_distance" default="1.20"/>
+  <arg name="oa_occupancy_threshold" default="50"/>
+  <arg name="oa_unknown_is_obstacle" default="false"/>
+  <arg name="oa_min_turn_rate" default="0.50"/>
+  <arg name="oa_max_turn_rate" default="1.40"/>
+  <arg name="oa_max_output_linear" default="0.8"/>
+
+  <!-- Waypoint yaml -->
+  <arg name="waypoints_yaml" default="/home/lry/ORB_SLAM3/Examples/ROS/ORB_SLAM3/config/waypoints.yaml"/>
+
+  <!-- Controller params -->
+  <arg name="k_linear" default="1.2"/>
+  <arg name="k_angular" default="2.0"/>
+  <arg name="max_linear" default="0.8"/>
+  <arg name="max_angular" default="1.5"/>
+  <arg name="dist_tolerance" default="0.08"/>
+  <arg name="yaw_tolerance" default="0.35"/>
+
+
+
+  <!-- Optional helper -->
+  <arg name="use_odom_to_path" default="false"/>
+
+  <!-- Start Gazebo + robot -->
+  <include file="$(arg gazebo_launch)">
+    <arg name="robot_urdf" value="$(arg robot_urdf)"/>
+  </include>
+  
+    <!-- RViz -->
+  <arg name="use_rviz" default="true"/>
+  <arg name="rviz_config" default="/home/lry/catkin_ws/src/my_gazebo_sim/gazebo_nav.rviz"/>
+
+  <!-- Waypoint controller -->
+  <node pkg="ORB_SLAM3"
+        type="waypoint_controller"
+        name="waypoint_controller"
+        output="screen">
+    <param name="odom_topic" value="$(arg odom_topic)"/>
+    <param name="cmd_topic" value="$(arg cmd_raw_topic)"/>
+    <param name="marker_topic" value="$(arg marker_topic)"/>
+    <param name="frame_id" value="$(arg frame_id)"/>
+
+    <param name="k_linear" value="$(arg k_linear)"/>
+    <param name="k_angular" value="$(arg k_angular)"/>
+    <param name="max_linear" value="$(arg max_linear)"/>
+    <param name="max_angular" value="$(arg max_angular)"/>
+    <param name="dist_tolerance" value="$(arg dist_tolerance)"/>
+    <param name="yaw_tolerance" value="$(arg yaw_tolerance)"/>
+
+    <!-- Load yaml into private namespace: /waypoint_controller/... -->
+    <rosparam file="$(arg waypoints_yaml)" command="load"/>
+  </node>
+
+  <node if="$(arg use_obstacle_avoidance)"
+        pkg="my_gazebo_sim"
+        type="obstacle_avoidance.py"
+        name="obstacle_avoidance"
+        output="screen">
+    <param name="enabled" value="true"/>
+    <param name="cmd_in_topic" value="$(arg cmd_raw_topic)"/>
+    <param name="cmd_out_topic" value="$(arg cmd_topic)"/>
+    <param name="map_topic" value="$(arg map_topic)"/>
+    <param name="odom_topic" value="$(arg odom_topic)"/>
+    <param name="forward_distance" value="$(arg oa_forward_distance)"/>
+    <param name="corridor_half_width" value="$(arg oa_corridor_half_width)"/>
+    <param name="critical_distance" value="$(arg oa_critical_distance)"/>
+    <param name="slowdown_distance" value="$(arg oa_slowdown_distance)"/>
+    <param name="occupancy_threshold" value="$(arg oa_occupancy_threshold)"/>
+    <param name="unknown_is_obstacle" value="$(arg oa_unknown_is_obstacle)"/>
+    <param name="min_turn_rate" value="$(arg oa_min_turn_rate)"/>
+    <param name="max_turn_rate" value="$(arg oa_max_turn_rate)"/>
+    <param name="max_output_linear" value="$(arg oa_max_output_linear)"/>
+  </node>
+
+  <node unless="$(arg use_obstacle_avoidance)"
+        pkg="topic_tools"
+        type="relay"
+        name="cmd_vel_passthrough"
+        args="$(arg cmd_raw_topic) $(arg cmd_topic)"
+        output="screen"/>
+
+  <!-- Optional odom -> path -->
+  <node if="$(arg use_odom_to_path)"
+        pkg="ORB_SLAM3"
+        type="odom_to_path"
+        name="odom_to_path"
+        output="screen">
+    <param name="odom_topic" value="$(arg odom_topic)"/>
+    <param name="path_topic" value="/path"/>
+    <param name="frame_id" value="$(arg frame_id)"/>
+    <param name="max_path_size" value="2000"/>
+  </node>
+
+  <!-- RViz -->
+  <node if="$(arg use_rviz)"
+        pkg="rviz"
+        type="rviz"
+        name="rviz"
+        output="screen"
+        args="-d $(arg rviz_config)"/>
+</launch>
