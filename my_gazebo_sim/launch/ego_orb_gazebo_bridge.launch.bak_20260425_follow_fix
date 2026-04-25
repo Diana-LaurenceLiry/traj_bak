@@ -94,7 +94,6 @@
         output="screen">
     <param name="model_name" value="$(arg model_name)"/>
     <param name="cmd_topic" value="planning/pos_cmd"/>
-    <param name="control_odom_topic" value="$(arg navigation_odom_topic)"/>
     <param name="max_xy_speed" value="$(arg max_vel)"/>
     <param name="max_z_speed" value="1.2"/>
     <param name="max_yaw_rate" value="0.9"/>

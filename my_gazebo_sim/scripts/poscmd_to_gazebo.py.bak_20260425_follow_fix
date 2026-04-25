@@ -7,7 +7,6 @@ import threading
 import rospy
 from gazebo_msgs.msg import ModelState, ModelStates
 from gazebo_msgs.srv import SetModelState
-from nav_msgs.msg import Odometry
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
 from quadrotor_msgs.msg import PositionCommand
@@ -19,7 +18,6 @@ class PosCmdToGazebo:
 
         self.model_name = rospy.get_param("~model_name", "simple_uav")
         self.cmd_topic = rospy.get_param("~cmd_topic", "planning/pos_cmd")
-        self.control_odom_topic = rospy.get_param("~control_odom_topic", "")
         self.model_states_topic = rospy.get_param("~model_states_topic", "/gazebo/model_states")
         self.set_state_service = rospy.get_param("~set_state_service", "/gazebo/set_model_state")
         self.control_rate = rospy.get_param("~control_rate", 50.0)
@@ -54,15 +52,11 @@ class PosCmdToGazebo:
         self.latest_cmd = None
         self.latest_cmd_stamp = rospy.Time(0)
         self.latest_pose = None
-        self.latest_control_odom = None
         self.model_index = None
         self.dynamic_obstacles = []
 
         rospy.Subscriber(self.cmd_topic, PositionCommand, self.cmd_callback, queue_size=1)
         rospy.Subscriber(self.model_states_topic, ModelStates, self.model_states_callback, queue_size=1)
-        if self.control_odom_topic:
-            rospy.Subscriber(self.control_odom_topic, Odometry, self.control_odom_callback, queue_size=1)
-            rospy.loginfo("poscmd_to_gazebo: control odom enabled: %s", self.control_odom_topic)
 
         rospy.loginfo("waiting for %s ...", self.set_state_service)
         rospy.wait_for_service(self.set_state_service)
@@ -96,26 +90,15 @@ class PosCmdToGazebo:
                         obs.append((p.x, p.y))
                 self.dynamic_obstacles = obs
 
-    def control_odom_callback(self, msg):
-        with self.lock:
-            self.latest_control_odom = msg
-
     def on_timer(self, _):
         with self.lock:
-            model_pose = self.latest_pose
-            control_odom = self.latest_control_odom
+            pose = self.latest_pose
             cmd = self.latest_cmd
             cmd_age = (rospy.Time.now() - self.latest_cmd_stamp).to_sec()
             dynamic_obstacles = list(self.dynamic_obstacles)
 
-        if model_pose is None:
+        if pose is None:
             return
-
-        # Tracking error should be computed in the same frame as planner command.
-        # Prefer odom pose (same source as planner) to avoid world/odom mismatch.
-        pose = model_pose
-        if control_odom is not None:
-            pose = control_odom.pose.pose
 
         vx = 0.0
         vy = 0.0
@@ -170,9 +153,9 @@ class PosCmdToGazebo:
         else:
             self.ready_to_move = False
 
-        if model_pose.position.z > self.z_max:
+        if pose.position.z > self.z_max:
             vz = min(vz, -0.3)
-        elif model_pose.position.z < self.z_min:
+        elif pose.position.z < self.z_min:
             vz = max(vz, 0.3)
 
         if self.enable_dynamic_avoidance and dynamic_obstacles:
@@ -185,7 +168,7 @@ class PosCmdToGazebo:
 
         req = ModelState()
         req.model_name = self.model_name
-        req.pose = model_pose
+        req.pose = pose
         if self.keep_level_attitude:
             q = req.pose.orientation
             _, _, yaw_now = euler_from_quaternion([q.x, q.y, q.z, q.w])
