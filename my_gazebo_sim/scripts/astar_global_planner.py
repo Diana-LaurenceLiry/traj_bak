@@ -23,6 +23,7 @@ class AStarGlobalPlanner:
         self.unknown_is_obstacle = rospy.get_param("~unknown_is_obstacle", False)
         self.replan_rate = rospy.get_param("~replan_rate", 1.0)
         self.goal_tolerance = rospy.get_param("~goal_tolerance", 0.20)
+        self.free_search_radius = int(rospy.get_param("~free_search_radius", 8))
 
         self.lock = threading.Lock()
         self.map_msg = None
@@ -115,8 +116,20 @@ class AStarGlobalPlanner:
             (-1, 1),  (0, 1),  (1, 1),
         ]
 
-        if not is_free(start) or not is_free(goal):
-            return None
+        # If start/goal falls into occupied cell (often due inflation), snap to
+        # nearest free cell to avoid planner getting stuck at origin.
+        if not is_free(start):
+            snapped = self.find_nearest_free(start, is_free, in_bounds, self.free_search_radius)
+            if snapped is None:
+                rospy.logwarn_throttle(1.0, "A*: start in obstacle and no nearby free cell.")
+                return None
+            start = snapped
+        if not is_free(goal):
+            snapped = self.find_nearest_free(goal, is_free, in_bounds, self.free_search_radius)
+            if snapped is None:
+                rospy.logwarn_throttle(1.0, "A*: goal in obstacle and no nearby free cell.")
+                return None
+            goal = snapped
 
         open_heap = []
         heapq.heappush(open_heap, (h(start), 0.0, start))
@@ -147,6 +160,25 @@ class AStarGlobalPlanner:
                     f = tentative_g + h(nxt)
                     heapq.heappush(open_heap, (f, tentative_g, nxt))
 
+        return None
+
+    @staticmethod
+    def find_nearest_free(origin, is_free_fn, in_bounds_fn, max_radius):
+        ox, oy = origin
+        if is_free_fn(origin):
+            return origin
+        for r in range(1, max(1, int(max_radius)) + 1):
+            # Scan ring boundary only (fast enough for small radius)
+            for dx in range(-r, r + 1):
+                for dy in (-r, r):
+                    c = (ox + dx, oy + dy)
+                    if in_bounds_fn(c) and is_free_fn(c):
+                        return c
+            for dy in range(-r + 1, r):
+                for dx in (-r, r):
+                    c = (ox + dx, oy + dy)
+                    if in_bounds_fn(c) and is_free_fn(c):
+                        return c
         return None
 
     @staticmethod

@@ -11,6 +11,7 @@ import time
 from datetime import datetime
 
 import rospy
+from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped
 
 
@@ -46,6 +47,38 @@ class GoalSwitchWatcher:
             return
         if self.seen_target:
             self.switched = True
+
+
+class OdomStallWatcher:
+    """Detect stale motion from odom stream (stuck condition)."""
+
+    def __init__(self, topic, move_eps_xy, move_eps_z):
+        self.topic = topic
+        self.move_eps_xy = move_eps_xy
+        self.move_eps_z = move_eps_z
+        self.last_pos = None
+        self.last_odom_t = 0.0
+        now = time.time()
+        self.start_t = now
+        self.last_move_t = now
+        self.sub = rospy.Subscriber(self.topic, Odometry, self._cb, queue_size=50)
+
+    def _cb(self, msg):
+        p = msg.pose.pose.position
+        cur = (float(p.x), float(p.y), float(p.z))
+        self.last_odom_t = time.time()
+        if self.last_pos is None:
+            self.last_pos = cur
+            self.last_move_t = self.last_odom_t
+            return
+
+        dx = cur[0] - self.last_pos[0]
+        dy = cur[1] - self.last_pos[1]
+        dz = abs(cur[2] - self.last_pos[2])
+        dxy = (dx * dx + dy * dy) ** 0.5
+        if dxy >= self.move_eps_xy or dz >= self.move_eps_z:
+            self.last_move_t = self.last_odom_t
+            self.last_pos = cur
 
 
 def start_proc(cmd, log_path):
@@ -160,6 +193,15 @@ def main():
     parser.add_argument("--target_y", type=float, default=1.0)
     parser.add_argument("--target_z", type=float, default=1.0)
     parser.add_argument("--target_tol", type=float, default=0.35)
+    parser.add_argument("--odom_topic", default="/visual_slam/odom_safe_filtered")
+    parser.add_argument("--stall_sec", type=float, default=20.0,
+                        help="Stop run if odom movement is stale for this many seconds")
+    parser.add_argument("--stall_min_age", type=float, default=15.0,
+                        help="Ignore stall detection during initial startup period")
+    parser.add_argument("--move_eps_xy", type=float, default=0.12,
+                        help="Minimum XY movement (m) to be considered progress")
+    parser.add_argument("--move_eps_z", type=float, default=0.08,
+                        help="Minimum Z movement (m) to be considered progress")
     parser.add_argument("--startup_sec", type=float, default=10.0)
     parser.add_argument("--tail_sec", type=float, default=2.0)
     parser.add_argument("--timeout_sec", type=float, default=300.0)
@@ -198,6 +240,7 @@ def main():
         cleanup_leftovers(args.launch_pkg, args.launch_file, args.bag_dir, args.prefix, args.cleanup_wait_sec)
         target = (args.target_x, args.target_y, args.target_z)
         watcher = GoalSwitchWatcher(args.goal_topic, target, args.target_tol)
+        stall_watcher = OdomStallWatcher(args.odom_topic, args.move_eps_xy, args.move_eps_z)
 
         launch_cmd = [
             "bash",
@@ -230,6 +273,14 @@ def main():
         while True:
             if watcher.switched:
                 stop_reason = "goal_switched_after_target"
+                break
+            now_t = time.time()
+            if (
+                args.stall_sec > 0.0
+                and (now_t - stall_watcher.start_t) >= args.stall_min_age
+                and (now_t - stall_watcher.last_move_t) >= args.stall_sec
+            ):
+                stop_reason = f"stall_no_motion_{int(args.stall_sec)}s"
                 break
             if launch_proc.poll() is not None:
                 stop_reason = "launch_exited"

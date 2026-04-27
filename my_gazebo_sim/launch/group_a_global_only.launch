@@ -2,8 +2,9 @@
   <env name="GAZEBO_MODEL_PATH" value="/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/models/ADS_models:/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/models/gazebo_models:/usr/share/gazebo-11/models:$(optenv GAZEBO_MODEL_PATH)"/>
   <env name="GAZEBO_MODEL_DATABASE_URI" value=""/>
 
-  <arg name="world_name" default="/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/worlds/ADS_worlds/industrial_world.world"/>
+  <arg name="world_name" default="/home/lry/catkin_ws/src/UAV_world/forest_gen-master/big_worlds/forest0.world"/>
   <arg name="use_rviz" default="true"/>
+  <arg name="use_dynamic_obstacles" default="true"/>
   <arg name="use_orbslam" default="true"/>
   <arg name="orb_voc_file" default="/home/lry/ORB_SLAM3/Vocabulary/ORBvoc.txt"/>
   <arg name="orb_settings_file" default="/home/lry/catkin_ws/src/my_gazebo_sim/config/orb_gazebo_rgbd.yaml"/>
@@ -31,23 +32,23 @@
     <param name="output_topic" value="$(arg navigation_odom_topic)"/>
     <param name="model_states_topic" value="/gazebo/model_states"/>
     <param name="model_name" value="simple_uav"/>
-    <param name="use_fallback" value="false"/>
-    <param name="min_z" value="0.20"/>
-    <param name="max_z" value="3.0"/>
-    <param name="max_jump_xy" value="1.8"/>
-    <param name="max_jump_z" value="0.9"/>
-    <param name="jump_ref_timeout" value="0.8"/>
-    <param name="relock_reject_count" value="25"/>
+    <param name="use_fallback" value="true"/>
+    <param name="min_z" value="0.05"/>
+    <param name="max_z" value="10.0"/>
+    <param name="max_jump_xy" value="0.8"/>
+    <param name="max_jump_z" value="0.5"/>
+    <param name="jump_ref_timeout" value="1000.0"/>
+    <param name="relock_reject_count" value="1000000"/>
     <param name="stale_timeout" value="1.2"/>
     <param name="blocked_timeout" value="1.8"/>
-    <param name="allow_raw_when_blocked" value="true"/>
+    <param name="allow_raw_when_blocked" value="false"/>
     <param name="accept_z_outlier_with_clamp" value="true"/>
   </node>
 
   <include file="$(find my_gazebo_sim)/launch/uav_astar_navigation.launch">
     <arg name="world_name" value="$(arg world_name)"/>
     <arg name="use_3d_obstacle_avoidance" value="false"/>
-    <arg name="use_rviz" value="false"/>
+    <arg name="use_rviz" value="$(arg use_rviz)"/>
     <arg name="odom_topic" value="$(arg navigation_odom_topic)"/>
     <arg name="map_resolution" value="0.10"/>
     <arg name="map_width" value="800"/>
@@ -56,17 +57,18 @@
     <arg name="map_origin_y" value="-40.0"/>
   </include>
 
-  <node pkg="my_gazebo_sim"
+  <node if="$(arg use_dynamic_obstacles)"
+        pkg="my_gazebo_sim"
         type="dynamic_obstacles_manager.py"
         name="dynamic_obstacles_manager"
         output="screen">
     <param name="prefix" value="dyn_obs"/>
     <param name="rate" value="20.0"/>
-    <param name="z_center" value="0.9"/>
-    <param name="box_size_x" value="0.8"/>
-    <param name="box_size_y" value="0.8"/>
-    <param name="box_size_z" value="1.8"/>
-    <param name="box_mass" value="6.0"/>
+    <param name="z_base" value="0.0"/>
+    <param name="cyl_radius" value="0.24"/>
+    <param name="cyl_height" value="1.20"/>
+    <param name="cyl_mass" value="4.0"/>
+    <param name="auto_relocate" value="false"/>
   </node>
 
   <node pkg="my_gazebo_sim"
@@ -78,22 +80,30 @@
     <!-- A/B groups use Twist control chain; keep patrol cmd monitor off PositionCommand topics. -->
     <param name="cmd_topic" value="/planning/pos_cmd_unused"/>
     <param name="frame_id" value="odom"/>
-    <param name="switch_distance" value="0.8"/>
+    <param name="switch_distance" value="1.0"/>
     <param name="switch_cooldown" value="0.8"/>
-    <param name="resend_same_goal" value="true"/>
+    <param name="resend_same_goal" value="false"/>
     <param name="resend_interval" value="2.0"/>
     <param name="start_delay" value="2.0"/>
-    <param name="start_min_distance" value="2.0"/>
+    <param name="start_min_distance" value="5.0"/>
     <param name="goal_timeout" value="9999.0"/>
-    <param name="no_progress_timeout" value="9999.0"/>
-    <param name="timeout_min_age" value="9999.0"/>
-    <param name="enable_no_progress_timeout" value="false"/>
+    <param name="no_progress_timeout" value="22.0"/>
+    <param name="progress_epsilon" value="0.15"/>
+    <param name="timeout_min_age" value="12.0"/>
+    <param name="enable_no_progress_timeout" value="true"/>
     <param name="cmd_stale_retrigger_sec" value="9999.0"/>
     <param name="cmd_retrigger_interval" value="9999.0"/>
     <param name="loop_route" value="false"/>
-    <rosparam command="load" file="$(find my_gazebo_sim)/config/compare_route.yaml"/>
+    <rosparam param="route_points">
+      # Match the main experiment route for fair A* vs Global+Local comparison.
+      - [-1.0, 3.0, 1.0]
+      - [0.0, 7.0, 1.0]
+      - [13.5, 13.5, 1.0]
+      - [18.0, -9.0, 1.0]
+      - [10.0, -5.0, 1.0]
+      - [4.0, -6.0, 1.0]
+      - [1.0, 1.0, 1.0]
+    </rosparam>
   </node>
 
-  <!-- Use the same RViz launch as EGO experiments for visual consistency. -->
-  <include if="$(arg use_rviz)" file="$(find ego_planner)/launch/rviz.launch"/>
 </launch>

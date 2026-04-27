@@ -66,6 +66,7 @@
   <arg name="use_auto_patrol" default="false"/>
   <arg name="use_global_planner" default="true"/>
   <arg name="use_global_map_builder" default="true"/>
+  <arg name="use_ego_planner" default="true"/>
   <arg name="user_goal_topic" default="/move_base_simple/goal"/>
   <arg name="planner_goal_topic" default="/planner/ego_goal"/>
   <arg name="global_path_topic" default="/planner/global_path"/>
@@ -89,7 +90,8 @@
   </include>
 
   <!-- Execute EGO position command on Gazebo UAV model -->
-  <node pkg="my_gazebo_sim"
+  <node if="$(arg use_ego_planner)"
+        pkg="my_gazebo_sim"
         type="poscmd_to_gazebo.py"
         name="poscmd_to_gazebo"
         output="screen">
@@ -113,6 +115,40 @@
     <param name="yaw_start_threshold" value="0.18"/>
     <param name="yaw_realign_threshold" value="0.35"/>
     <param name="lock_yaw_while_moving" value="false"/>
+  </node>
+
+  <!-- A* only control chain -->
+  <node unless="$(arg use_ego_planner)"
+        pkg="my_gazebo_sim"
+        type="path_follower.py"
+        name="path_follower"
+        respawn="true"
+        respawn_delay="1.0"
+        output="screen">
+    <param name="path_topic" value="$(arg global_path_topic)"/>
+    <param name="odom_topic" value="$(arg navigation_odom_topic)"/>
+    <param name="cmd_topic" value="/cmd_vel"/>
+    <param name="lookahead_dist" value="0.55"/>
+    <param name="goal_tolerance" value="0.35"/>
+    <param name="max_linear" value="$(arg max_vel)"/>
+    <param name="max_angular" value="1.2"/>
+    <param name="k_angular" value="1.8"/>
+    <param name="rotate_in_place_thresh" value="0.75"/>
+    <param name="control_rate" value="20.0"/>
+  </node>
+
+  <node unless="$(arg use_ego_planner)"
+        pkg="my_gazebo_sim"
+        type="uav_cmdvel_to_gazebo.py"
+        name="uav_cmdvel_to_gazebo"
+        respawn="true"
+        respawn_delay="1.0"
+        output="screen">
+    <param name="model_name" value="$(arg model_name)"/>
+    <param name="cmd_topic" value="/cmd_vel"/>
+    <param name="max_xy_speed" value="$(arg max_vel)"/>
+    <param name="max_z_speed" value="1.0"/>
+    <param name="max_yaw_rate" value="1.5"/>
   </node>
 
   <!-- ORB-SLAM3 odometry output -->
@@ -187,7 +223,7 @@
         args="0 0 0 0 0 0 world odom"/>
 
   <!-- EGO planner core (without ego built-in simulator.xml) -->
-  <include file="$(find ego_planner)/launch/advanced_param.xml">
+  <include if="$(arg use_ego_planner)" file="$(find ego_planner)/launch/advanced_param.xml">
     <arg name="map_size_x_" value="$(arg map_size_x)"/>
     <arg name="map_size_y_" value="$(arg map_size_y)"/>
     <arg name="map_size_z_" value="$(arg map_size_z)"/>
@@ -227,10 +263,12 @@
   </include>
 
   <!-- Optional global guiding layer: A* on occupancy map -->
-  <node if="$(eval arg('use_global_planner') == 'true' and arg('use_global_map_builder') == 'true')"
+  <node if="$(arg use_global_map_builder)"
         pkg="my_gazebo_sim"
         type="map_builder.py"
         name="global_map_builder"
+        respawn="true"
+        respawn_delay="1.0"
         output="screen">
     <param name="cloud_topic" value="/depth_camera/depth/points"/>
     <param name="map_topic" value="$(arg global_map_topic)"/>
@@ -252,6 +290,8 @@
         pkg="my_gazebo_sim"
         type="astar_global_planner.py"
         name="astar_global_planner"
+        respawn="true"
+        respawn_delay="1.0"
         output="screen">
     <param name="map_topic" value="$(arg global_map_topic)"/>
     <param name="odom_topic" value="$(arg navigation_odom_topic)"/>
@@ -263,7 +303,7 @@
     <param name="goal_tolerance" value="0.35"/>
   </node>
 
-  <node if="$(arg use_global_planner)"
+  <node if="$(eval str(arg('use_global_planner')).lower() == 'true' and str(arg('use_ego_planner')).lower() == 'true')"
         pkg="my_gazebo_sim"
         type="global_path_to_goal.py"
         name="global_path_to_goal"
@@ -279,7 +319,7 @@
     <param name="fallback_to_user_goal" value="true"/>
   </node>
 
-  <node unless="$(arg use_global_planner)"
+  <node if="$(eval str(arg('use_global_planner')).lower() == 'false' and str(arg('use_ego_planner')).lower() == 'true')"
         pkg="topic_tools"
         type="relay"
         name="direct_goal_relay"
@@ -287,14 +327,14 @@
         output="screen"/>
 
   <!-- Convert B-spline to PositionCommand -->
-  <node pkg="ego_planner" name="traj_server" type="traj_server" output="screen">
+  <node if="$(arg use_ego_planner)" pkg="ego_planner" name="traj_server" type="traj_server" output="screen">
     <remap from="/position_cmd" to="planning/pos_cmd"/>
     <remap from="/odom_world" to="$(arg navigation_odom_topic)"/>
     <param name="traj_server/time_forward" value="0.3" type="double"/>
   </node>
 
   <!-- Goal input (2D Nav Goal in RViz) -->
-  <node pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
+  <node if="$(arg use_ego_planner)" pkg="waypoint_generator" name="waypoint_generator" type="waypoint_generator" output="screen">
     <remap from="~odom" to="$(arg navigation_odom_topic)"/>
     <remap from="~goal" to="$(arg planner_goal_topic)"/>
     <remap from="~traj_start_trigger" to="/traj_start_trigger"/>
@@ -302,7 +342,7 @@
   </node>
 
   <!-- Goal reach feedback -->
-  <node pkg="my_gazebo_sim" type="goal_reach_feedback.py" name="goal_reach_feedback" output="screen">
+  <node if="$(arg use_ego_planner)" pkg="my_gazebo_sim" type="goal_reach_feedback.py" name="goal_reach_feedback" output="screen">
     <param name="odom_topic" value="$(arg navigation_odom_topic)"/>
     <param name="goal_topic" value="$(arg planner_goal_topic)"/>
     <param name="default_goal_z" value="3.0"/>
@@ -348,8 +388,8 @@
     <param name="progress_epsilon" value="0.15"/>
     <param name="timeout_min_age" value="12.0"/>
     <param name="enable_no_progress_timeout" value="true"/>
-    <param name="cmd_stale_retrigger_sec" value="1.2"/>
-    <param name="cmd_retrigger_interval" value="1.5"/>
+    <param name="cmd_stale_retrigger_sec" value="$(eval '1.2' if str(arg('use_ego_planner')).lower() == 'true' else '9999.0')"/>
+    <param name="cmd_retrigger_interval" value="$(eval '1.5' if str(arg('use_ego_planner')).lower() == 'true' else '9999.0')"/>
     <param name="loop_route" value="false"/>
     <rosparam param="route_points">
       # Updated waypoints: keep larger clearance from trees in forest0.world.
