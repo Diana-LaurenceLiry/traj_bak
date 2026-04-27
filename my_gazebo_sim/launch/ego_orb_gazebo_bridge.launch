@@ -344,9 +344,9 @@
     <param name="start_delay" value="2.0"/>
     <param name="start_min_distance" value="5.0"/>
     <param name="goal_timeout" value="9999.0"/>
-    <param name="no_progress_timeout" value="10.0"/>
+    <param name="no_progress_timeout" value="22.0"/>
     <param name="progress_epsilon" value="0.15"/>
-    <param name="timeout_min_age" value="8.0"/>
+    <param name="timeout_min_age" value="12.0"/>
     <param name="enable_no_progress_timeout" value="true"/>
     <param name="cmd_stale_retrigger_sec" value="1.2"/>
     <param name="cmd_retrigger_interval" value="1.5"/>
