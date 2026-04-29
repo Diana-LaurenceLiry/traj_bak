@@ -10,11 +10,11 @@
   <env name="GAZEBO_MODEL_DATABASE_URI" value=""/>
 
   <!-- Gazebo world + UAV model -->
-  <arg name="world_name" default="/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/worlds/ADS_worlds/industrial_world.world"/>
+  <arg name="world_name" default="/home/lry/catkin_ws/src/UAV_world/forest_gen-master/big_worlds/forest0.world"/>
   <arg name="robot_urdf" default="$(find my_gazebo_sim)/urdf/simple_uav_depth.urdf"/>
   <arg name="model_name" default="simple_uav"/>
-  <arg name="spawn_x" default="17.0"/>
-  <arg name="spawn_y" default="2.0"/>
+  <arg name="spawn_x" default="-10.0"/>
+  <arg name="spawn_y" default="0.0"/>
   <arg name="spawn_z" default="0.5"/>
 
   <!-- ORB-SLAM3 -->
@@ -279,7 +279,7 @@
     <param name="origin_x" value="-37.5"/>
     <param name="origin_y" value="-37.5"/>
     <param name="min_range" value="0.3"/>
-    <param name="max_range" value="22.0"/>
+    <param name="max_range" value="16.0"/>
     <param name="min_z" value="0.25"/>
     <param name="max_z" value="6.0"/>
     <param name="inflation_radius" value="0.50"/>
@@ -392,15 +392,14 @@
     <param name="cmd_retrigger_interval" value="$(eval '1.5' if str(arg('use_ego_planner')).lower() == 'true' else '9999.0')"/>
     <param name="loop_route" value="false"/>
     <rosparam param="route_points">
-      # Straight then left-turn route:
-      # go straight along +x first, then turn left (toward +y) for a long segment near buildings.
-      - [20.0,  4.0, 1.0]
-      - [27.0,  4.0, 1.0]
-      - [34.0,  4.0, 1.0]
-      - [34.0, 10.0, 1.0]
-      - [34.0, 18.0, 1.0]
-      - [34.0, 26.0, 1.0]
-      - [30.0, 30.0, 1.0]
+      # Updated waypoints: keep larger clearance from trees in forest0.world.
+      - [-1.0, 3.0, 1.0]
+      - [0.0, 7.0, 1.0]
+      - [13.5, 13.5, 1.0]
+      - [18.0, -9.0, 1.0]
+      - [10.0, -5.0, 1.0]
+      - [4.0, -6.0, 1.0]
+      - [1.0, 1.0, 1.0]
     </rosparam>
   </node>
 
