@@ -4,6 +4,9 @@
   <arg name="world_name" default="$(find my_gazebo_sim)/worlds/nav_obstacle_3d.world"/>
   <arg name="robot_urdf" default="$(find my_gazebo_sim)/urdf/simple_uav_depth.urdf"/>
   <arg name="model_name" default="simple_uav"/>
+  <arg name="spawn_x" default="0.0"/>
+  <arg name="spawn_y" default="0.0"/>
+  <arg name="spawn_z" default="0.8"/>
 
   <arg name="cloud_topic" default="/depth_camera/depth/points"/>
   <arg name="map_topic" default="/occupancy_map"/>
@@ -27,6 +30,9 @@
     <arg name="world_name" value="$(arg world_name)"/>
     <arg name="robot_urdf" value="$(arg robot_urdf)"/>
     <arg name="model_name" value="$(arg model_name)"/>
+    <arg name="spawn_x" value="$(arg spawn_x)"/>
+    <arg name="spawn_y" value="$(arg spawn_y)"/>
+    <arg name="spawn_z" value="$(arg spawn_z)"/>
   </include>
 
   <node pkg="my_gazebo_sim"

@@ -3,6 +3,7 @@
 
 import argparse
 import csv
+import glob
 import math
 import os
 import re
@@ -19,6 +20,50 @@ try:
     import matplotlib.pyplot as plt
 except Exception:
     HAS_MPL = False
+
+
+def _odd_window_size(n):
+    n = max(1, int(n))
+    return n if (n % 2 == 1) else (n + 1)
+
+
+def moving_median(seq, win):
+    if not seq:
+        return []
+    w = _odd_window_size(win)
+    h = w // 2
+    out = []
+    for i in range(len(seq)):
+        lo = max(0, i - h)
+        hi = min(len(seq), i + h + 1)
+        s = sorted(seq[lo:hi])
+        out.append(s[len(s) // 2])
+    return out
+
+
+def moving_mean(seq, win):
+    if not seq:
+        return []
+    w = _odd_window_size(win)
+    h = w // 2
+    out = []
+    for i in range(len(seq)):
+        lo = max(0, i - h)
+        hi = min(len(seq), i + h + 1)
+        seg = seq[lo:hi]
+        out.append(sum(seg) / float(len(seg)))
+    return out
+
+
+def smooth_rel_series(rx, ry, rd, med_win=9, mean_win=7):
+    # Remove spikes first (median), then smooth jitter (mean).
+    rx1 = moving_median(rx, med_win)
+    ry1 = moving_median(ry, med_win)
+    rd1 = moving_median(rd, med_win)
+    rx2 = moving_mean(rx1, mean_win)
+    ry2 = moving_mean(ry1, mean_win)
+    rd2 = moving_mean(rd1, mean_win)
+    return rx2, ry2, rd2
 
 
 def choose_topic(available, candidates):
@@ -41,57 +86,255 @@ def apply_yaw_2d(x, y, yaw):
     return c * x - s * y, s * x + c * y
 
 
-def load_static_obs_from_world(world_file):
-    """Parse static obstacle XY points from Gazebo world file.
+def compose_pose_2d(parent_pose, local_pose):
+    px, py, pyaw = parent_pose
+    lx, ly, lyaw = local_pose
+    rx, ry = apply_yaw_2d(lx, ly, pyaw)
+    return px + rx, py + ry, pyaw + lyaw
 
-    Focus on forest_gen style worlds: model 'forest' with links named tree*.
-    Also supports model-level tree* definitions.
-    """
+
+def pose6_to_pose2(pose6):
+    x, y, _, _, _, yaw = pose6
+    return x, y, yaw
+
+
+def parse_geometry_radius(geom_node):
+    """Return footprint-equivalent radius in meters from a <geometry> node."""
+    if geom_node is None:
+        return None
+
+    cyl = geom_node.find("cylinder")
+    if cyl is not None:
+        r_node = cyl.find("radius")
+        if r_node is not None and r_node.text:
+            try:
+                return max(0.05, float(r_node.text.strip()))
+            except Exception:
+                pass
+
+    sph = geom_node.find("sphere")
+    if sph is not None:
+        r_node = sph.find("radius")
+        if r_node is not None and r_node.text:
+            try:
+                return max(0.05, float(r_node.text.strip()))
+            except Exception:
+                pass
+
+    box = geom_node.find("box")
+    if box is not None:
+        sz = box.find("size")
+        if sz is not None and sz.text:
+            try:
+                sx, sy, _ = [float(v) for v in sz.text.strip().split()]
+                # Equivalent circle radius for 2D footprint of a rectangle.
+                return max(0.05, 0.5 * math.hypot(sx, sy))
+            except Exception:
+                pass
+
+    mesh = geom_node.find("mesh")
+    if mesh is not None:
+        scale_node = mesh.find("scale")
+        if scale_node is not None and scale_node.text:
+            try:
+                sc = [float(v) for v in scale_node.text.strip().split()]
+                if len(sc) >= 2:
+                    return max(0.05, 0.5 * math.hypot(sc[0], sc[1]))
+            except Exception:
+                pass
+
+    return None
+
+
+def parse_link_obstacles(link_node, model_world_pose2, model_name="", default_radius=0.25):
+    """Parse one link into obstacle circles in world frame."""
+    out = []
+    link_pose2 = (0.0, 0.0, 0.0)
+    lpose = link_node.find("pose")
+    if lpose is not None and lpose.text:
+        p = parse_pose_text(lpose.text)
+        if p is not None:
+            link_pose2 = pose6_to_pose2(p)
+
+    link_world_pose2 = compose_pose_2d(model_world_pose2, link_pose2)
+    lxw, lyw, lyaw = link_world_pose2
+
+    collisions = link_node.findall("collision")
+    if not collisions:
+        # Fallback for simple tree links without explicit collision geometry.
+        lname = link_node.attrib.get("name", "")
+        if lname.startswith("tree"):
+            out.append((lxw, lyw, default_radius, model_name))
+        return out
+
+    for col in collisions:
+        cpose2 = (0.0, 0.0, 0.0)
+        cpose = col.find("pose")
+        if cpose is not None and cpose.text:
+            p = parse_pose_text(cpose.text)
+            if p is not None:
+                cpose2 = pose6_to_pose2(p)
+        cxw, cyw, _ = compose_pose_2d((lxw, lyw, lyaw), cpose2)
+
+        r = parse_geometry_radius(col.find("geometry"))
+        if r is None:
+            r = default_radius
+        out.append((cxw, cyw, r, model_name))
+
+    return out
+
+
+def candidate_model_dirs():
+    roots = []
+    env_paths = os.environ.get("GAZEBO_MODEL_PATH", "")
+    if env_paths:
+        roots.extend([p for p in env_paths.split(":") if p])
+    roots.extend(
+        [
+            "/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/models/ADS_models",
+            "/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/models/gazebo_models",
+            "/usr/share/gazebo-11/models",
+        ]
+    )
+    uniq = []
+    seen = set()
+    for p in roots:
+        if p not in seen and os.path.isdir(p):
+            seen.add(p)
+            uniq.append(p)
+    return uniq
+
+
+def resolve_model_sdf(uri_text):
+    if not uri_text:
+        return ""
+    uri = uri_text.strip()
+
+    if uri.startswith("model://"):
+        model_name = uri[len("model://") :].split("/")[0]
+        for root in candidate_model_dirs():
+            mdir = os.path.join(root, model_name)
+            if not os.path.isdir(mdir):
+                continue
+            model_sdf = os.path.join(mdir, "model.sdf")
+            if os.path.isfile(model_sdf):
+                return model_sdf
+            sdf_files = sorted(glob.glob(os.path.join(mdir, "*.sdf")))
+            if sdf_files:
+                return sdf_files[0]
+        return ""
+
+    if uri.startswith("file://"):
+        path = uri[len("file://") :]
+        if os.path.isfile(path):
+            return path
+        return ""
+
+    if os.path.isfile(uri):
+        return uri
+    return ""
+
+
+def load_obstacles_from_model_sdf(sdf_file, model_world_pose2):
+    out = []
+    if not sdf_file or not os.path.isfile(sdf_file):
+        return out
+    try:
+        root = ET.parse(sdf_file).getroot()
+    except Exception:
+        return out
+
+    models = root.findall(".//model")
+    if not models and root.tag == "model":
+        models = [root]
+
+    for model in models:
+        mp2 = model_world_pose2
+        mpose = model.find("pose")
+        if mpose is not None and mpose.text:
+            p = parse_pose_text(mpose.text)
+            if p is not None:
+                mp2 = compose_pose_2d(model_world_pose2, pose6_to_pose2(p))
+        links = model.findall("link")
+        for link in links:
+            out.extend(parse_link_obstacles(link, mp2, model_name=model.attrib.get("name", "")))
+    return out
+
+
+def load_static_obs_from_world(world_file):
+    """Parse static obstacle circles (x, y, radius) from Gazebo world/SDF."""
     if not world_file:
-        return {}
+        return []
     if not os.path.isfile(world_file):
-        return {}
+        return []
 
     try:
         tree = ET.parse(world_file)
         root = tree.getroot()
     except Exception:
-        return {}
+        return []
 
-    out = {}
-    idx = 0
+    out = []
+
+    # 1) Direct models defined in world.
     for model in root.findall(".//model"):
-        model_name = model.attrib.get("name", "")
-        model_pose = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-        pose_node = model.find("pose")
-        if pose_node is not None and pose_node.text:
-            p = parse_pose_text(pose_node.text)
+        pose6 = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        mpose = model.find("pose")
+        if mpose is not None and mpose.text:
+            p = parse_pose_text(mpose.text)
             if p is not None:
-                model_pose = p
-        mx, my, _, _, _, myaw = model_pose
+                pose6 = p
+        mp2 = pose6_to_pose2(pose6)
 
-        # link-level trees (forest_gen default)
-        for link in model.findall("link"):
-            lname = link.attrib.get("name", "")
-            if not lname.startswith("tree"):
-                continue
-            lpose = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-            lnode = link.find("pose")
-            if lnode is not None and lnode.text:
-                p = parse_pose_text(lnode.text)
-                if p is not None:
-                    lpose = p
-            lx, ly, _, _, _, _ = lpose
-            rx, ry = apply_yaw_2d(lx, ly, myaw)
-            wx, wy = mx + rx, my + ry
-            out[f"world_tree_{idx:04d}"] = (wx, wy)
-            idx += 1
+        links = model.findall("link")
+        if links:
+            for link in links:
+                out.extend(parse_link_obstacles(link, mp2))
+        else:
+            # Fallback if model has no explicit links in world file.
+            mname = model.attrib.get("name", "")
+            if mname.startswith("tree"):
+                out.append((mp2[0], mp2[1], 0.25, mname))
 
-        # model-level trees (fallback style)
-        if model_name.startswith("tree"):
-            out[f"world_tree_{idx:04d}"] = (mx, my)
-            idx += 1
+    # 2) Included models (model://...).
+    for inc in root.findall(".//include"):
+        uri_node = inc.find("uri")
+        if uri_node is None or not uri_node.text:
+            continue
+        pose6 = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        pnode = inc.find("pose")
+        if pnode is not None and pnode.text:
+            p = parse_pose_text(pnode.text)
+            if p is not None:
+                pose6 = p
+        mp2 = pose6_to_pose2(pose6)
 
+        sdf_file = resolve_model_sdf(uri_node.text.strip())
+        parsed = load_obstacles_from_model_sdf(sdf_file, mp2)
+        if parsed:
+            out.extend(parsed)
+        else:
+            # Conservative fallback: one small circle at include pose.
+            out.append((mp2[0], mp2[1], 0.30, inc.findtext("name", "").strip()))
+
+    return out
+
+
+def filter_world_obstacles(obs_list, max_radius=4.5):
+    """Filter out map-floor like obstacles and overly large footprints for visualization."""
+    if not obs_list:
+        return []
+    ignored_tokens = ("ground", "plane", "floor", "asphalt")
+    out = []
+    for ox, oy, rr, name in obs_list:
+        lname = (name or "").lower()
+        if any(tok in lname for tok in ignored_tokens):
+            continue
+        if rr is None or rr <= 0.0:
+            continue
+        if rr > max_radius:
+            continue
+        out.append((ox, oy, rr, name))
     return out
 
 
@@ -168,6 +411,29 @@ def find_final_waypoint_reach_time(odom_samples, mission_start, mission_end, wp_
     target = None
     for p in wp_points:
         if p[0] == final_idx:
+            target = p
+            break
+    if target is None:
+        return None
+
+    _, wx, wy, wz = target
+    for ts, ox, oy, oz in odom_samples:
+        if ts < mission_start or ts > mission_end:
+            continue
+        dxy = math.hypot(ox - wx, oy - wy)
+        dz = abs(oz - wz)
+        if dxy <= xy_thresh and dz <= z_thresh:
+            return ts
+    return None
+
+
+def find_waypoint_reach_time_by_index(odom_samples, mission_start, mission_end, wp_points, target_idx, xy_thresh, z_thresh):
+    """Return first timestamp when waypoint[target_idx] is reached, else None."""
+    if not wp_points or target_idx <= 0:
+        return None
+    target = None
+    for p in wp_points:
+        if int(p[0]) == int(target_idx):
             target = p
             break
     if target is None:
@@ -311,8 +577,12 @@ def process_one_bag(bag_path, args, stamp):
     min_dist_any = []
     min_dist_dyn = []
     dyn_tracks = {}
+    dyn_rel_samples = []
     static_xy = {}
-    world_static_xy = load_static_obs_from_world(args.world_file)
+    world_static_obs = filter_world_obstacles(
+        load_static_obs_from_world(args.world_file),
+        max_radius=args.world_obs_max_radius,
+    )
 
     final_plan_fail = 0
     final_plan_succ = 0
@@ -373,6 +643,7 @@ def process_one_bag(bag_path, args, stamp):
                     if d_dyn is None or d < d_dyn:
                         d_dyn = d
                     dyn_tracks.setdefault(name, []).append((op.x, op.y))
+                    dyn_rel_samples.append((ts, name, up.x - op.x, up.y - op.y, up.z - op.z, d))
                 else:
                     # Static models: keep one representative XY sample for plotting.
                     static_xy.setdefault(name, (op.x, op.y))
@@ -588,32 +859,51 @@ def process_one_bag(bag_path, args, stamp):
         topic_rows.sort(key=lambda x: x["topic"])
         write_csv(topics_csv, topic_rows, ["topic", "type", "message_count", "frequency"])
 
+    plot_end = mission_end
+    if args.plot_cut_wp_idx > 0:
+        cut_t = find_waypoint_reach_time_by_index(
+            odom_samples,
+            mission_start,
+            mission_end,
+            list(wp_points.values()),
+            args.plot_cut_wp_idx,
+            args.wp_reach_xy_thresh,
+            args.wp_reach_z_thresh,
+        )
+        if cut_t is not None and cut_t >= mission_start:
+            plot_end = min(plot_end, cut_t)
+
     traj_png = ""
     dist_png = ""
+    dyn_rel_png = ""
+    dyn_rel_pngs = []
     if HAS_MPL:
         # Plot: XY trajectory + goals + dynamic obstacle tracks.
         traj_png = os.path.join(args.output_dir, f"{bag_name}_{stamp}_traj_xy.png")
-        xs = [p[1] for p in odom_samples if mission_start <= p[0] <= mission_end]
-        ys = [p[2] for p in odom_samples if mission_start <= p[0] <= mission_end]
+        xs = [p[1] for p in odom_samples if mission_start <= p[0] <= plot_end]
+        ys = [p[2] for p in odom_samples if mission_start <= p[0] <= plot_end]
         fig = plt.figure(figsize=(8, 7))
         ax = fig.add_subplot(111)
         if xs and ys:
             ax.plot(xs, ys, "b-", linewidth=1.6, label="UAV trajectory")
             ax.scatter([xs[0]], [ys[0]], c="g", s=40, label="start")
             ax.scatter([xs[-1]], [ys[-1]], c="r", s=40, label="end")
-        if world_static_xy:
-            # Draw every parsed tree from world file as round dots (no coord text).
-            tree_pts = list(world_static_xy.values())
-            ax.scatter(
-                [p[0] for p in tree_pts],
-                [p[1] for p in tree_pts],
-                c="lightgray",
-                s=12,
-                alpha=0.65,
-                marker="o",
-                edgecolors="none",
-                label="world trees",
-            )
+        if world_static_obs:
+            # Draw size-aware static obstacles parsed from world/SDF.
+            first = True
+            for ox, oy, rr, _name in world_static_obs:
+                draw_r = max(rr * args.world_obs_radius_scale, args.world_obs_min_draw_radius)
+                circ = plt.Circle(
+                    (ox, oy),
+                    draw_r,
+                    facecolor="#A8A8A8",
+                    edgecolor="#5F5F5F",
+                    linewidth=0.4,
+                    alpha=0.32,
+                    label=("world obs" if first else None),
+                )
+                ax.add_patch(circ)
+                first = False
         elif static_xy:
             # Fallback: static models from /gazebo/model_states.
             spts = list(static_xy.values())
@@ -632,6 +922,8 @@ def process_one_bag(bag_path, args, stamp):
         if wp_points:
             # Prefer true waypoint index from auto_goal_patrol logs: wp[1], wp[2], ...
             ordered_wp = [wp_points[k] for k in sorted(wp_points.keys())]
+            if args.max_plot_wp > 0:
+                ordered_wp = ordered_wp[: args.max_plot_wp]
             gx = [g[1] for g in ordered_wp]
             gy = [g[2] for g in ordered_wp]
             goal_xy_for_focus = list(zip(gx, gy))
@@ -650,6 +942,8 @@ def process_one_bag(bag_path, args, stamp):
                 lx, ly, lz = uniq_goals[-1]
                 if euclid3((gx, gy, gz), (lx, ly, lz)) > 0.25:
                     uniq_goals.append((gx, gy, gz))
+            if args.max_plot_wp > 0:
+                uniq_goals = uniq_goals[: args.max_plot_wp]
             gx = [g[0] for g in uniq_goals]
             gy = [g[1] for g in uniq_goals]
             goal_xy_for_focus = list(zip(gx, gy))
@@ -662,11 +956,15 @@ def process_one_bag(bag_path, args, stamp):
             if len(pts) >= 2:
                 ax.plot([p[0] for p in pts], [p[1] for p in pts], "--", linewidth=1.0, alpha=0.7, label=name)
         set_compact_xy_limits(ax, xs, ys, goal_xy_for_focus, pad=args.xy_focus_pad)
+        if args.traj_xlim_min is not None and args.traj_xlim_max is not None:
+            ax.set_xlim(args.traj_xlim_min, args.traj_xlim_max)
+        if args.traj_ylim_min is not None and args.traj_ylim_max is not None:
+            ax.set_ylim(args.traj_ylim_min, args.traj_ylim_max)
         ax.set_xlabel("x (m)")
         ax.set_ylabel("y (m)")
         ax.set_title(f"Trajectory XY - {bag_name} ({method})")
         ax.grid(True, linestyle="--", alpha=0.4)
-        ax.axis("equal")
+        ax.set_aspect("equal", adjustable="box")
         ax.legend(loc="best", fontsize=8)
         fig.tight_layout()
         fig.savefig(traj_png, dpi=160)
@@ -694,6 +992,72 @@ def process_one_bag(bag_path, args, stamp):
         fig.savefig(dist_png, dpi=160)
         plt.close(fig)
 
+        # Plot: one relative-position figure per dynamic obstacle.
+        if dyn_rel_samples:
+            by_name = {}
+            for s in dyn_rel_samples:
+                if mission_start <= s[0] <= mission_end:
+                    by_name.setdefault(s[1], []).append(s)
+
+            rel_half_window = 8.0
+            for rel_name in sorted(by_name.keys()):
+                samples = by_name[rel_name]
+                if not samples:
+                    continue
+                nearest = min(samples, key=lambda s: s[5])
+                center_t = nearest[0]
+                rel_seg = [s for s in samples if (center_t - rel_half_window) <= s[0] <= (center_t + rel_half_window)]
+                if not rel_seg:
+                    continue
+
+                out_png = os.path.join(args.output_dir, f"{bag_name}_{stamp}_dyn_rel_{rel_name}.png")
+                rt = [s[0] - mission_start for s in rel_seg]
+                rx = [s[2] for s in rel_seg]
+                ry = [s[3] for s in rel_seg]
+                rd = [s[5] for s in rel_seg]
+                rx_s, ry_s, rd_s = smooth_rel_series(
+                    rx,
+                    ry,
+                    rd,
+                    med_win=args.rel_smooth_median_win,
+                    mean_win=args.rel_smooth_mean_win,
+                )
+
+                fig = plt.figure(figsize=(9, 8))
+                ax1 = fig.add_subplot(211)
+                ax1.plot(rx_s, ry_s, "b-", linewidth=1.8, label=f"UAV in {rel_name} frame")
+                ax1.scatter([rx_s[0]], [ry_s[0]], c="g", s=36, label="start")
+                ax1.scatter([rx_s[-1]], [ry_s[-1]], c="r", s=36, label="end")
+                ax1.scatter([0.0], [0.0], c="k", s=28, marker="x", label=rel_name)
+                circle = plt.Circle((0.0, 0.0), args.collision_threshold, color="r", fill=False, linestyle="--", linewidth=1.0)
+                ax1.add_patch(circle)
+                ax1.set_aspect("equal", adjustable="box")
+                ax1.grid(True, linestyle="--", alpha=0.4)
+                ax1.set_xlabel("relative x (m): UAV - obstacle")
+                ax1.set_ylabel("relative y (m): UAV - obstacle")
+                ax1.set_title(f"Relative XY around closest dynamic encounter ({rel_name})")
+                ax1.legend(loc="best", fontsize=8)
+
+                ax2 = fig.add_subplot(212)
+                ax2.plot(rt, rd_s, "c-", linewidth=1.6, label=f"dist(UAV,{rel_name})")
+                ax2.plot(rt, rx_s, color="#4B4BFF", linewidth=1.2, alpha=0.95, label="rel x")
+                ax2.plot(rt, ry_s, color="#FF8C00", linewidth=1.2, alpha=0.95, label="rel y")
+                ax2.axhline(args.collision_threshold, color="r", linestyle="--", linewidth=1.0, label="collision threshold")
+                ax2.axvline(center_t - mission_start, color="#666666", linestyle=":", linewidth=1.0, label="closest time")
+                ax2.grid(True, linestyle="--", alpha=0.4)
+                ax2.set_xlabel("time from mission start (s)")
+                ax2.set_ylabel("meter / distance (m)")
+                ax2.set_title(f"Relative Components & Distance (window +/-{rel_half_window:.0f}s)")
+                ax2.legend(loc="best", fontsize=8)
+
+                fig.tight_layout()
+                fig.savefig(out_png, dpi=160)
+                plt.close(fig)
+                dyn_rel_pngs.append(out_png)
+
+            if dyn_rel_pngs:
+                dyn_rel_png = dyn_rel_pngs[0]
+
     return {
         "summary": summary,
         "readable": readable_row,
@@ -706,6 +1070,8 @@ def process_one_bag(bag_path, args, stamp):
         "topics_csv": topics_csv,
         "traj_png": traj_png,
         "dist_png": dist_png,
+        "dyn_rel_png": dyn_rel_png,
+        "dyn_rel_pngs": dyn_rel_pngs,
     }
 
 
@@ -723,8 +1089,44 @@ def main():
     parser.add_argument("--goal_topic", default="/move_base_simple/goal")
     parser.add_argument("--model_states_topic", default="/gazebo/model_states")
     parser.add_argument("--world_file", default="", help="Optional .world path for static obstacle overlay")
+    parser.add_argument(
+        "--world_obs_max_radius",
+        type=float,
+        default=4.5,
+        help="Max static obstacle footprint radius (m) to draw from world/SDF",
+    )
+    parser.add_argument(
+        "--world_obs_radius_scale",
+        type=float,
+        default=0.55,
+        help="Scale factor for displayed world obstacle footprint radius",
+    )
+    parser.add_argument(
+        "--world_obs_min_draw_radius",
+        type=float,
+        default=0.35,
+        help="Min visualization radius (m) for static obstacles",
+    )
     parser.add_argument("--xy_focus_pad", type=float, default=1.0, help="XY plot extra margin around traj/goals (m)")
+    parser.add_argument("--traj_xlim_min", type=float, default=None, help="Optional fixed xmin for trajectory plot")
+    parser.add_argument("--traj_xlim_max", type=float, default=None, help="Optional fixed xmax for trajectory plot")
+    parser.add_argument("--traj_ylim_min", type=float, default=None, help="Optional fixed ymin for trajectory plot")
+    parser.add_argument("--traj_ylim_max", type=float, default=None, help="Optional fixed ymax for trajectory plot")
+    parser.add_argument(
+        "--max_plot_wp",
+        type=int,
+        default=0,
+        help="Only plot first N waypoints in trajectory figure (<=0 means all).",
+    )
+    parser.add_argument(
+        "--plot_cut_wp_idx",
+        type=int,
+        default=0,
+        help="Cut trajectory drawing at first reach of waypoint index N (<=0 disables).",
+    )
     parser.add_argument("--collision_threshold", type=float, default=0.45)
+    parser.add_argument("--rel_smooth_median_win", type=int, default=9, help="Median window for dynamic-relative smoothing")
+    parser.add_argument("--rel_smooth_mean_win", type=int, default=7, help="Mean window after median smoothing")
     parser.add_argument("--wp_reach_xy_thresh", type=float, default=1.0)
     parser.add_argument("--wp_reach_z_thresh", type=float, default=0.5)
     args = parser.parse_args()
@@ -762,6 +1164,11 @@ def main():
             print(f"  traj png    : {out['traj_png']}")
         if out["dist_png"]:
             print(f"  dist png    : {out['dist_png']}")
+        if out.get("dyn_rel_pngs"):
+            for p in out["dyn_rel_pngs"]:
+                print(f"  dyn-rel png : {p}")
+        elif out["dyn_rel_png"]:
+            print(f"  dyn-rel png : {out['dyn_rel_png']}")
         if not HAS_MPL:
             print("  png plots   : skipped (matplotlib not installed)")
 

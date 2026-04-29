@@ -2,9 +2,9 @@
   <env name="GAZEBO_MODEL_PATH" value="/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/models/ADS_models:/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/models/gazebo_models:/usr/share/gazebo-11/models:$(optenv GAZEBO_MODEL_PATH)"/>
   <env name="GAZEBO_MODEL_DATABASE_URI" value=""/>
 
-  <arg name="world_name" default="/home/lry/catkin_ws/src/UAV_world/forest_gen-master/big_worlds/forest0.world"/>
+  <arg name="world_name" default="/home/lry/catkin_ws/src/UAV_world/AIrDrone_Security-main/airdrone_navigation/worlds/ADS_worlds/industrial_world.world"/>
   <arg name="use_rviz" default="true"/>
-  <arg name="use_dynamic_obstacles" default="true"/>
+  <arg name="use_dynamic_obstacles" default="false"/>
   <arg name="use_orbslam" default="true"/>
   <arg name="orb_voc_file" default="/home/lry/ORB_SLAM3/Vocabulary/ORBvoc.txt"/>
   <arg name="orb_settings_file" default="/home/lry/catkin_ws/src/my_gazebo_sim/config/orb_gazebo_rgbd.yaml"/>
@@ -12,6 +12,9 @@
   <arg name="orb_depth_topic" default="/depth_camera/depth/image_raw"/>
   <arg name="orb_odom_topic" default="/visual_slam/odom_raw"/>
   <arg name="navigation_odom_topic" default="/visual_slam/odom_safe_filtered"/>
+  <arg name="spawn_x" default="17.0"/>
+  <arg name="spawn_y" default="2.0"/>
+  <arg name="spawn_z" default="0.5"/>
 
   <node if="$(arg use_orbslam)"
         pkg="ORB_SLAM3"
@@ -50,6 +53,9 @@
     <arg name="use_3d_obstacle_avoidance" value="false"/>
     <arg name="use_rviz" value="$(arg use_rviz)"/>
     <arg name="odom_topic" value="$(arg navigation_odom_topic)"/>
+    <arg name="spawn_x" value="$(arg spawn_x)"/>
+    <arg name="spawn_y" value="$(arg spawn_y)"/>
+    <arg name="spawn_z" value="$(arg spawn_z)"/>
     <arg name="map_resolution" value="0.10"/>
     <arg name="map_width" value="800"/>
     <arg name="map_height" value="800"/>
@@ -95,14 +101,15 @@
     <param name="cmd_retrigger_interval" value="9999.0"/>
     <param name="loop_route" value="false"/>
     <rosparam param="route_points">
-      # Match the main experiment route for fair A* vs Global+Local comparison.
-      - [-1.0, 3.0, 1.0]
-      - [0.0, 7.0, 1.0]
-      - [13.5, 13.5, 1.0]
-      - [18.0, -9.0, 1.0]
-      - [10.0, -5.0, 1.0]
-      - [4.0, -6.0, 1.0]
-      - [1.0, 1.0, 1.0]
+      # Keep identical to ego_orb_gazebo_bridge for fair comparison.
+      - [20.0,  4.0, 1.0]
+      - [27.0,  4.0, 1.0]
+      - [34.0,  4.0, 1.0]
+      - [34.0, 10.0, 1.0]
+      - [34.0, 18.0, 1.0]
+      - [34.0, 26.0, 1.0]
+      - [30.0, 30.0, 1.0]
+      - [24.0, 31.0, 1.0]
     </rosparam>
   </node>
 

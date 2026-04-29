@@ -4,6 +4,7 @@
 import argparse
 import glob
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from datetime import datetime
 import rospy
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped
+from rosgraph_msgs.msg import Log
 
 
 def now_str():
@@ -23,13 +25,18 @@ def dist3(a, b):
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
 
 
+def dist2(a, b):
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
+
+
 class GoalSwitchWatcher:
     """Detect transition: target goal -> next non-target goal."""
 
-    def __init__(self, topic, target_xyz, tol):
+    def __init__(self, topic, target_xyz, tol, use_xy_only):
         self.topic = topic
         self.target = target_xyz
         self.tol = tol
+        self.use_xy_only = use_xy_only
         self.seen_target = False
         self.switched = False
         self.last_goal = None
@@ -41,7 +48,8 @@ class GoalSwitchWatcher:
         g = (float(p.x), float(p.y), float(p.z))
         self.last_goal = g
         self.last_stamp = time.time()
-        is_target = dist3(g, self.target) <= self.tol
+        d = dist2(g, self.target) if self.use_xy_only else dist3(g, self.target)
+        is_target = d <= self.tol
         if is_target:
             self.seen_target = True
             return
@@ -79,6 +87,34 @@ class OdomStallWatcher:
         if dxy >= self.move_eps_xy or dz >= self.move_eps_z:
             self.last_move_t = self.last_odom_t
             self.last_pos = cur
+
+
+class WaypointIndexSwitchWatcher:
+    """Detect transition: seen wp[target] -> next wp[other]."""
+
+    def __init__(self, rosout_topic, target_wp_idx):
+        self.rosout_topic = rosout_topic
+        self.target_wp_idx = int(target_wp_idx)
+        self.seen_target = False
+        self.switched = False
+        self.last_wp_idx = None
+        self.last_stamp = 0.0
+        self._wp_re = re.compile(r"(?:switch to wp|-> wp)\[(\d+)/(\d+)\]")
+        self.sub = rospy.Subscriber(self.rosout_topic, Log, self._cb, queue_size=200)
+
+    def _cb(self, msg):
+        text = msg.msg
+        m = self._wp_re.search(text)
+        if not m:
+            return
+        idx = int(m.group(1))
+        self.last_wp_idx = idx
+        self.last_stamp = time.time()
+        if idx == self.target_wp_idx:
+            self.seen_target = True
+            return
+        if self.seen_target and idx != self.target_wp_idx:
+            self.switched = True
 
 
 def start_proc(cmd, log_path):
@@ -181,18 +217,33 @@ def main():
     parser = argparse.ArgumentParser(
         description="Repeat UAV experiment N times and stop each run when goal switches from target waypoint to next waypoint."
     )
-    parser.add_argument("--runs", type=int, default=5)
-    parser.add_argument("--prefix", default="g1_l1_repeat")
+    parser.add_argument("--runs", type=int, default=10)
+    parser.add_argument("--start_idx", type=int, default=1, help="Starting run index (e.g., 5 -> run05)")
+    parser.add_argument("--prefix", default="g2_gl_batch")
     parser.add_argument("--bag_dir", default="/home/lry/catkin_ws/exp_bags")
     parser.add_argument("--out_dir", default="/home/lry/catkin_ws/logs/bag_metrics")
     parser.add_argument("--launch_pkg", default="my_gazebo_sim")
     parser.add_argument("--launch_file", default="ego_orb_gazebo_bridge.launch")
     parser.add_argument("--launch_args", default="use_auto_patrol:=true")
     parser.add_argument("--goal_topic", default="/move_base_simple/goal")
-    parser.add_argument("--target_x", type=float, default=1.0)
-    parser.add_argument("--target_y", type=float, default=1.0)
+    parser.add_argument("--rosout_topic", default="/rosout_agg")
+    parser.add_argument("--stop_wp_idx", type=int, default=7,
+                        help="Stop each run when route switches from wp[this] to another wp")
+    parser.add_argument("--target_x", type=float, default=25.0)
+    parser.add_argument("--target_y", type=float, default=30.5)
     parser.add_argument("--target_z", type=float, default=1.0)
     parser.add_argument("--target_tol", type=float, default=0.35)
+    parser.add_argument(
+        "--target_xy_only",
+        action="store_true",
+        default=True,
+        help="Use XY distance only for target waypoint match (default: on).",
+    )
+    parser.add_argument(
+        "--target_xyz",
+        action="store_true",
+        help="Use XYZ distance for target waypoint match (override --target_xy_only).",
+    )
     parser.add_argument("--odom_topic", default="/visual_slam/odom_safe_filtered")
     parser.add_argument("--stall_sec", type=float, default=20.0,
                         help="Stop run if odom movement is stale for this many seconds")
@@ -210,6 +261,8 @@ def main():
     parser.add_argument("--method", default="global_local")
     parser.add_argument("--metrics_script", default="/home/lry/catkin_ws/src/my_gazebo_sim/scripts/bag_experiment_metrics.py")
     args = parser.parse_args()
+    if args.target_xyz:
+        args.target_xy_only = False
 
     os.makedirs(args.bag_dir, exist_ok=True)
     os.makedirs(args.out_dir, exist_ok=True)
@@ -218,7 +271,12 @@ def main():
     with open(summary_path, "w", encoding="utf-8") as sf:
         sf.write(f"Batch start: {now_str()}\n")
         sf.write(f"runs={args.runs}, launch={args.launch_pkg}/{args.launch_file} {args.launch_args}\n")
-        sf.write(f"stop condition: goal switches from [{args.target_x},{args.target_y},{args.target_z}] to next point\n\n")
+        mode = "XY" if args.target_xy_only else "XYZ"
+        sf.write(
+            f"stop condition: goal switches from [{args.target_x},{args.target_y},{args.target_z}] to next point "
+            f"(match mode={mode}, tol={args.target_tol})\n\n"
+        )
+        sf.write(f"wp-index condition: switch away after wp[{args.stop_wp_idx}]\n\n")
 
     # Ignore outer CLI args (especially strings containing ':=') to avoid
     # rospy treating them as remap params and throwing ROSInitException.
@@ -229,17 +287,19 @@ def main():
         argv=[sys.argv[0]],
     )
 
-    for i in range(1, args.runs + 1):
+    for i in range(args.start_idx, args.start_idx + args.runs):
         run_name = f"{args.prefix}_run{i:02d}"
         bag_path = os.path.join(args.bag_dir, f"{run_name}.bag")
         launch_log = os.path.join(args.out_dir, f"{run_name}_launch.log")
         bag_log = os.path.join(args.out_dir, f"{run_name}_rosbag.log")
         parse_log = os.path.join(args.out_dir, f"{run_name}_parse.log")
 
-        print(f"[{now_str()}] [{i}/{args.runs}] start {run_name}")
+        k = i - args.start_idx + 1
+        print(f"[{now_str()}] [{k}/{args.runs}] start {run_name}")
         cleanup_leftovers(args.launch_pkg, args.launch_file, args.bag_dir, args.prefix, args.cleanup_wait_sec)
         target = (args.target_x, args.target_y, args.target_z)
-        watcher = GoalSwitchWatcher(args.goal_topic, target, args.target_tol)
+        watcher = GoalSwitchWatcher(args.goal_topic, target, args.target_tol, args.target_xy_only)
+        wp_switch_watcher = WaypointIndexSwitchWatcher(args.rosout_topic, args.stop_wp_idx)
         stall_watcher = OdomStallWatcher(args.odom_topic, args.move_eps_xy, args.move_eps_z)
 
         launch_cmd = [
@@ -271,8 +331,11 @@ def main():
         t0 = time.time()
         stop_reason = "timeout"
         while True:
+            if wp_switch_watcher.switched:
+                stop_reason = f"wp{args.stop_wp_idx}_switched_to_next"
+                break
             if watcher.switched:
-                stop_reason = "goal_switched_after_target"
+                stop_reason = "goal_switched_after_target_coord"
                 break
             now_t = time.time()
             if (
@@ -324,7 +387,7 @@ def main():
             sf.write(f"  readable: {readable}\n")
             sf.write(f"  brief: {brief}\n\n")
 
-        print(f"[{now_str()}] [{i}/{args.runs}] done {run_name} ({stop_reason})")
+        print(f"[{now_str()}] [{k}/{args.runs}] done {run_name} ({stop_reason})")
         time.sleep(max(0.0, args.cooldown_sec))
 
     with open(summary_path, "a", encoding="utf-8") as sf:

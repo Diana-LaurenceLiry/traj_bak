@@ -70,13 +70,15 @@ class DynamicObstaclesManager:
         self.min_spawn_distance_to_origin = float(rospy.get_param("~min_spawn_distance_to_origin", 5.0))
         self.auto_relocate = bool(rospy.get_param("~auto_relocate", False))
 
-        # Two dynamic obstacles (conservative mode): slower and smaller oscillation
-        # to keep experiment challenging but avoid excessive route collapse.
+        # Two dynamic obstacles placed on the current route's key corridors.
+        # Motion is set perpendicular to local route direction:
+        # 1) near horizontal segment -> vertical crossing motion
+        # 2) near vertical segment   -> horizontal crossing motion
         self.obstacles = [
-            # Right corridor: gentle vertical motion around the segment toward wp4.
-            {"name": f"{self.prefix}_0", "cx": 16.6, "cy": 1.8, "ax": 0.0, "ay": 1.0, "w": 0.14, "ph": 0.0},
-            # Upper corridor: gentle horizontal motion near segment wp2->wp3.
-            {"name": f"{self.prefix}_1", "cx": 9.4, "cy": 10.8, "ax": 1.0, "ay": 0.0, "w": 0.13, "ph": 1.2},
+            # Lower area: vertical crossing through y~4 route.
+            {"name": f"{self.prefix}_0", "cx": 26.0, "cy": 4.0, "ax": 0.0, "ay": 2.6, "w": 0.15, "ph": 0.0},
+            # Right area: horizontal crossing through x~34 route.
+            {"name": f"{self.prefix}_1", "cx": 34.0, "cy": 17.0, "ax": 3.8, "ay": 0.0, "w": 0.14, "ph": 1.1},
         ]
 
         self.model_names = set()
